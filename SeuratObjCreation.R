@@ -7,13 +7,19 @@ library(tibble)
 library(Matrix)
 library(stringr)
 
-datapath<-"/data/scRNA/HMC3_ZKV/DRAGEN/Realign"
+#Change datapaht and the gsub path to reflect directory where the DRAGEN outputs in question are stored
+
+datapath<-"/data/scRNA/HMC3_ZKV/DRAGEN/Realign_again/Output_ds.d6e2c4c6825d46fda615ccfc230f0d78"
+#lists all paths tot he dircetories stored under DRAGEN outputs
 filenames<-list.dirs(datapath, recursive=FALSE)
-filenames<-gsub("/data/scRNA/HMC3_ZKV/DRAGEN/Realign/","",filenames[grep("ZSC",filenames)])
+#Mkaes a lsit of all biosamples directories in teh DRAGEN outputs. In this case taking the biosample suffix ZSC as the basis of identifying them
+filenames<-gsub("/data/scRNA/HMC3_ZKV/DRAGEN/Realign_again/Output_ds.d6e2c4c6825d46fda615ccfc230f0d78/","",filenames[grep("ZSC",filenames)])
 
 obj_list<-list()
-#Loop to make a Suerat object from each alignemnt dataset directory
+#Loop to make a Seurat object from each alignemnt dataset directory
 #Also makes a list of the Seurat object for downstream filtering and joining
+
+dir.create(paste0(datapath,"/Seurat_Out/Raw_Obj"),recursive=TRUE)
 for (i in filenames){
   specpath<-paste0(datapath,"/",i,"/",i)
   expression_matrix <- ReadMtx(
@@ -57,5 +63,52 @@ for (i in seq_along(obj_list)){
   
 }
 
+###########Make matrix for expression of TRANSCDS my trangenic gene by sample
+transframe<-data.frame(row_id=1:4)
+rownames(transframe)<-c("counts","cells","GAPDHcount","Norm")
+for (i in seq_along(filt_obj_list)){
+  seur<-filt_obj_list[[i]]
+  samp<-seur$Sample[[1]]
+  transexp<-FetchData(object=seur,vars=c("GAPDH","TRANSCDS"),layer="counts")
+  counts<-sum(transexp$TRANSCDS)
+  cells<-sum(transexp$TRANSCDS>0)
+  hkg<-sum(transexp$GAPDH)
+  normTRANS<-counts/hkg
+  transframe[[samp]]<-c(counts,cells,hkg,normTRANS)
+}
 
-merge(x=filt_obj_list[1],y=filt_obj_list[2:24])
+#####UNIFORM CELL COUNT and UNIFORM READ NUMBER merged Seurat objects
+####UCC and URN
+##subsetting each filtered seurat subject to teh top 512 cells by feature count
+UCClist<-list()
+for (i in seq_along(filt_obj_list)){
+  seurat_obj<-filt_obj_list[[i]]
+  #Get the 512 top cells 
+  top_cells<-seurat_obj@meta.data %>% arrange(desc(nCount_RNA)) %>% slice(1:512)%>% rownames()
+  seurat_top512 <- subset(seurat_obj, cells = top_cells)
+  UCClist<-append(UCClist,seurat_top512)
+}
+
+UCC_seur<-merge(x=UCClist[[1]],y=UCClist[2:24])
+UCC_seur<-JoinLayers(UCC_seur)
+#Normalize using SCTransform and save RDs into merged objects directory
+UCC_seur<-SCTransform(UCC_seur, vars.to.regress="percent.mt", verbose =FALSE)
+saveRDS(UCC_seur,paste0(datapath,"/Seurat_Out/MergedObjects/URN_seur.rds"))
+
+#Subsetting all seurat objects to only include cells with RNA counts above 10,000 and then emrging them into a single Seurat object
+
+URNlist<-list()
+
+for (i in seq_along(filt_obj_list)){
+  seurat_obj<-filt_obj_list[[i]]
+  #Get any cells above 10,000 feature count 
+  seurat_counthresh <- subset(seurat_obj, subset = nCount_RNA>=10000)
+  URNlist<-append(URNlist,seurat_counthresh) 
+  print(seurat_obj$Sample[[1]])
+  print(ncol(seurat_counthresh))
+}
+
+URN_seur<-merge(x=URNlist[[1]],y=URNlist[2:24])
+URN_seur<-JoinLayers(URN_seur)
+URN_seur<-SCTransform(URN_seur, vars.to.regress="percent.mt", verbose =FALSE)
+saveRDS(URN_seur,paste0(datapath,"/Seurat_Out/MergedObjects/URN_seur.rds"))

@@ -6,8 +6,9 @@ library(sctransform)
 library(tibble)
 library(Matrix)
 library(stringr)
+library(future)
 
-#Change datapaht and the gsub path to reflect directory where the DRAGEN outputs in question are stored
+#Change datapath and the gsub path to reflect directory where the DRAGEN outputs in question are stored
 
 datapath<-"/data/scRNA/HMC3_ZKV/DRAGEN/Realign_again/Output_ds.d6e2c4c6825d46fda615ccfc230f0d78"
 #lists all paths tot he dircetories stored under DRAGEN outputs
@@ -91,9 +92,10 @@ for (i in seq_along(filt_obj_list)){
 
 UCC_seur<-merge(x=UCClist[[1]],y=UCClist[2:24])
 UCC_seur<-JoinLayers(UCC_seur)
+saveRDS(UCC_seur,paste0(datapath,"/Seurat_Out/MergedObjects/UCC_seur.rds"))
 #Normalize using SCTransform and save RDs into merged objects directory
+
 UCC_seur<-SCTransform(UCC_seur, vars.to.regress="percent.mt", verbose =FALSE)
-saveRDS(UCC_seur,paste0(datapath,"/Seurat_Out/MergedObjects/URN_seur.rds"))
 
 #Subsetting all seurat objects to only include cells with RNA counts above 10,000 and then emrging them into a single Seurat object
 
@@ -110,5 +112,6 @@ for (i in seq_along(filt_obj_list)){
 
 URN_seur<-merge(x=URNlist[[1]],y=URNlist[2:24])
 URN_seur<-JoinLayers(URN_seur)
-URN_seur<-SCTransform(URN_seur, vars.to.regress="percent.mt", verbose =FALSE)
+
 saveRDS(URN_seur,paste0(datapath,"/Seurat_Out/MergedObjects/URN_seur.rds"))
+URN_seur<-SCTransform(URN_seur, vars.to.regress="percent.mt", verbose =FALSE)

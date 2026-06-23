@@ -1,4 +1,4 @@
-####Scrip to make seurat objects out of DRAGEN single cell analysis output files
+####Script to make seurat objects out of DRAGEN single cell analysis output files
 library(Seurat)
 library(dplyr)
 library(ggplot2)
@@ -95,8 +95,6 @@ UCC_seur<-JoinLayers(UCC_seur)
 saveRDS(UCC_seur,paste0(datapath,"/Seurat_Out/MergedObjects/UCC_seur.rds"))
 #Normalize using SCTransform and save RDs into merged objects directory
 
-UCC_seur<-SCTransform(UCC_seur, vars.to.regress="percent.mt", verbose =FALSE)
-
 #Subsetting all seurat objects to only include cells with RNA counts above 10,000 and then emrging them into a single Seurat object
 
 URNlist<-list()
@@ -114,4 +112,18 @@ URN_seur<-merge(x=URNlist[[1]],y=URNlist[2:24])
 URN_seur<-JoinLayers(URN_seur)
 
 saveRDS(URN_seur,paste0(datapath,"/Seurat_Out/MergedObjects/URN_seur.rds"))
+
+
+
+#switch to HUGGIN Server. Had to increase the size of memory available with
+# > options(future.globals.maxSize = 5 * 1024^3). to allow for URN seur
+UCC_seur<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/UCC_seur.rds")
+UCC_seur<-SCTransform(UCC_seur, vars.to.regress="percent.mt", verbose =FALSE)
+
+URN_seur<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/URN_seur.rds")
 URN_seur<-SCTransform(URN_seur, vars.to.regress="percent.mt", verbose =FALSE)
+
+saveRDS(URN_seur,"/data/scRNA/HMC3_ZSC/Seurat_OUT/URN_norm_seur.rds")
+saveRDS(UCC_seur,"/data/scRNA/HMC3_ZSC/Seurat_OUT/UCC_norm_seur.rds")
+
+

@@ -13,13 +13,21 @@ library(ggvenn)
 UCC_seur<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/UCC_norm_seur.rds")
 URN_seur<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/URN_norm_seur.rds")
 
+#REad in the integrated normalized Seurat Object
+UCC_int_seur<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/URN_int_seur.rds")
+
+#Populate Seur_target with whichever Seurat object you want to run DE and UMAP viz on
+#it will be used downstream for all the analyses, it will also pull the Name of the object to append to plot titles
+Seur_target<-UCC_int_seur
+Target_name<-"UCC Integrated"
 
 
-WT.PIC.de<-DEVolcano(UCC_seur,"ZSCCP","ZSCCC","Sample")
-WT.LPS.de<-DEVolcano(UCC_seur,"ZSCCL","ZSCCC","Sample")
+#Making DE lists and volcano plots for the indicated Seurat object
+WT.PIC.de<-DEVolcano(Seur_target,"ZSCCP","ZSCCC","Sample")
+WT.LPS.de<-DEVolcano(Seur_target,"ZSCCL","ZSCCC","Sample")
 
-J.PIC.de<-DEVolcano(UCC_seur,"ZSCJP","ZSCJC","Sample")
-J.LPS.de<-DEVolcano(UCC_seur,"ZSCJL","ZSCJC","Sample")
+J.PIC.de<-DEVolcano(Seur_target,"ZSCJP","ZSCJC","Sample")
+J.LPS.de<-DEVolcano(Seur_target,"ZSCJL","ZSCJC","Sample")
 
 Wt.pic.sig<-WT.PIC.de[WT.PIC.de$expression!="NS",c(2,5,7)]
 Wt.lps.sig<-WT.LPS.de[WT.LPS.de$expression!="NS",c(2,5,7)]
@@ -39,48 +47,48 @@ ggvenn(
   fill_color = c("#0073C2FF", "#EFC000FF", "#868686FF", "#CD534CFF"),
   stroke_size = 0.5, set_name_size = 4
 ) +
-  labs(title="All Significant Genes vs their isogenic control")
+  labs(title=paste0(Target_name,"All Significant Genes vs their isogenic control"))
 
 ggvenn(
   vennlist[1:2], 
   fill_color = c("#0073C2FF", "#EFC000FF"),
   stroke_size = 0.5, set_name_size = 4
 ) +
-  labs(title="All Significant Genes in WT samples")
+  labs(title=paste0(Target_name,"All Significant Genes in WT samples"))
 
 ggvenn(
   vennlist[3:4], 
   fill_color = c( "#868686FF", "#CD534CFF"),
   stroke_size = 0.5, set_name_size = 4
 ) +
-  labs(title="All Significant Genes in J samples")
+  labs(title=paste0(Target_name,"All Significant Genes in J samples"))
 
 ggvenn(
   vennlist[c(1,3)], 
   fill_color = c( "#868686FF", "#0073C2FF"),
   stroke_size = 0.5, set_name_size = 4
 ) +
-  labs(title="All Significant Genes in P samples")
+  labs(title=paste0(Target_name,": All Significant Genes in P samples"))
 
 
 # PCA and visualization
-UCC_seur <- RunPCA(UCC_seur, verbose = FALSE)
-VizDimLoadings(UCC_seur, dims = 1:2, reduction = "pca")
-Idents(UCC_seur) <- "Treatment"
+Seur_target <- RunPCA(Seur_target, verbose = FALSE)
+VizDimLoadings(Seur_target, dims = 1:2, reduction = "pca")
+Idents(Seur_target) <- "Treatment"
 
-DimPlot(UCC_seur, reduction = "pca") 
+DimPlot(Seur_target, reduction = "pca") 
 
 #Clustering and UMAP visualization
-UCC_seur <- FindNeighbors(UCC_seur, dims = 1:30, verbose = FALSE)
-UCC_seur <- FindClusters(UCC_seur, verbose = FALSE)
+Seur_target <- FindNeighbors(Seur_target, dims = 1:10, verbose = FALSE)
+Seur_target <- FindClusters(Seur_target, verbose = FALSE)
 
 
+Seur_target <- RunUMAP(Seur_target, dims = 1:10, verbose = FALSE)
 
+DimPlot(Seur_target, reduction = "umap",group.by="Treatment",label=FALSE)+
+labs(title=paste0(Target_name,": UMAP"))
 
-UCC_seur <- RunUMAP(UCC_seur, dims = 1:30, verbose = FALSE)
-
-DimPlot(UCC_seur, reduction = "umap",group.by="Sample",label=FALSE)
-
+saveRDS(Seur_target,paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,".rds"))
 
 
 ##FUNCTIONS LIVE BELOW!!!
@@ -127,7 +135,7 @@ DEVolcano<-function(SeurFile,Target1,Target2,Focus){
     
     # Formatting
     labs(
-      title = paste0("Volcano Plot:",Target1," VS ",Target2),
+      title = paste0(Target_name," Volcano Plot:",Target1," VS ",Target2),
       x = "Log2 Fold Change",
       y = "-Log10 p-value-adj"
     ) +

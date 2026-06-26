@@ -11,13 +11,13 @@ library(future)
 #Change datapath and the gsub path to reflect directory where the DRAGEN outputs in question are stored
 
 datapath<-"/data/scRNA/HMC3_ZKV/DRAGEN/Realign_again/Output_ds.d6e2c4c6825d46fda615ccfc230f0d78"
-#lists all paths tot he dircetories stored under DRAGEN outputs
+#lists all paths tot he directories stored under DRAGEN outputs
 filenames<-list.dirs(datapath, recursive=FALSE)
-#Mkaes a lsit of all biosamples directories in teh DRAGEN outputs. In this case taking the biosample suffix ZSC as the basis of identifying them
+#Makes a list of all biosamples directories in teh DRAGEN outputs. In this case taking the biosample suffix ZSC as the basis of identifying them
 filenames<-gsub("/data/scRNA/HMC3_ZKV/DRAGEN/Realign_again/Output_ds.d6e2c4c6825d46fda615ccfc230f0d78/","",filenames[grep("ZSC",filenames)])
 
 obj_list<-list()
-#Loop to make a Seurat object from each alignemnt dataset directory
+#Loop to make a Seurat object from each alignment dataset directory
 #Also makes a list of the Seurat object for downstream filtering and joining
 
 dir.create(paste0(datapath,"/Seurat_Out/Raw_Obj"),recursive=TRUE)
@@ -49,7 +49,7 @@ for (i in seq_along(obj_list)){
   seur[["percent.mt"]]<-PercentageFeatureSet(seur,pattern="^MT-")
   #add Treatment C=Control, L=LPS, P=PIC
   seur[["Treatment"]]<-str_sub(filenames[i],-1)
-  #add ZSC plasmid that was being transduced
+  #add ZSC plasmid that was transduced
   seur[["Background"]]<-str_sub(filenames[i],-2,-2)
   seur[["Sample"]]<-filenames[i]
   ###save plots to a png

@@ -11,13 +11,13 @@ library(future)
 #Change datapath and the gsub path to reflect directory where the DRAGEN outputs in question are stored
 
 datapath<-"/data/scRNA/HMC3_ZKV/DRAGEN/Realign_again/Output_ds.d6e2c4c6825d46fda615ccfc230f0d78"
-#lists all paths tot he directories stored under DRAGEN outputs
+#lists all paths tot he dircetories stored under DRAGEN outputs
 filenames<-list.dirs(datapath, recursive=FALSE)
-#Makes a list of all biosamples directories in teh DRAGEN outputs. In this case taking the biosample suffix ZSC as the basis of identifying them
+#Mkaes a lsit of all biosamples directories in the DRAGEN outputs. In this case taking the biosample suffix ZSC as the basis of identifying them
 filenames<-gsub("/data/scRNA/HMC3_ZKV/DRAGEN/Realign_again/Output_ds.d6e2c4c6825d46fda615ccfc230f0d78/","",filenames[grep("ZSC",filenames)])
 
 obj_list<-list()
-#Loop to make a Seurat object from each alignment dataset directory
+#Loop to make a Seurat object from each alignemnt dataset directory
 #Also makes a list of the Seurat object for downstream filtering and joining
 
 dir.create(paste0(datapath,"/Seurat_Out/Raw_Obj"),recursive=TRUE)
@@ -49,7 +49,7 @@ for (i in seq_along(obj_list)){
   seur[["percent.mt"]]<-PercentageFeatureSet(seur,pattern="^MT-")
   #add Treatment C=Control, L=LPS, P=PIC
   seur[["Treatment"]]<-str_sub(filenames[i],-1)
-  #add ZSC plasmid that was transduced
+  #add ZSC plasmid that was being transduced
   seur[["Background"]]<-str_sub(filenames[i],-2,-2)
   seur[["Sample"]]<-filenames[i]
   ###save plots to a png
@@ -62,6 +62,13 @@ for (i in seq_along(obj_list)){
   filt_obj_list<-append(filt_obj_list,seur)
   saveRDS(seur,paste0(datapath,"/Seurat_Out/Filtered/",filenames[i],".rds"))
   
+}
+
+###IF COMING IN AT THE MIDPOINT
+data<-"/data/scRNA/HMC3_ZKV/DRAGEN/Realign_again/Output_ds.d6e2c4c6825d46fda615ccfc230f0d78/Seurat_Out/Filtered"
+filt_obj_list<-list()
+for (i in list.files(path="/data/scRNA/HMC3_ZKV/DRAGEN/Realign_again/Output_ds.d6e2c4c6825d46fda615ccfc230f0d78/Seurat_Out/Filtered",pattern = "\\.rds$") ){
+  filt_obj_list<-append(filt_obj_list,readRDS(paste0(data,"/",i)))
 }
 
 ###########Make matrix for expression of TRANSCDS my trangenic gene by sample
@@ -90,10 +97,28 @@ for (i in seq_along(filt_obj_list)){
   UCClist<-append(UCClist,seurat_top512)
 }
 
+#Merging and creating unintegrated UCC seurat object
 UCC_seur<-merge(x=UCClist[[1]],y=UCClist[2:24])
 UCC_seur<-JoinLayers(UCC_seur)
 saveRDS(UCC_seur,paste0(datapath,"/Seurat_Out/MergedObjects/UCC_seur.rds"))
-#Normalize using SCTransform and save RDs into merged objects directory
+
+#MErging and creating an INTEGRATED UCC seurat object
+UCC_int_seur<-merge(x=UCClist[[1]],y=UCClist[2:24])
+#Join and resplit layers by sample to name them the right way
+UCC_int_seur <- JoinLayers(UCC_int_seur)
+UCC_int_seur[["RNA"]] <- split( UCC_int_seur[["RNA"]], f = UCC_int_seur$Sample)
+#Normalize and scale using traditional workflow SCTtransform was not playing nice with Integrate
+UCC_int_seur <- NormalizeData(UCC_int_seur)
+UCC_int_seur <- FindVariableFeatures(UCC_int_seur)
+UCC_int_seur <- ScaleData(UCC_int_seur)
+UCC_int_seur <- RunPCA(UCC_int_seur)
+
+UCC_int_seur<-IntegrateLayers(object=UCC_int_seur, method = CCAIntegration, orig.reduction = "pca", 
+                              new.reduction = "integrated.cca",verbose=FALSE)
+
+UCC_int_seur[["RNA"]] <- JoinLayers(UCC_int_seur[["RNA"]])
+
+saveRDS(UCC_int_seur,paste0(datapath,"/Seurat_Out/MergedObjects/UCC_int_seur.rds"))
 
 #Subsetting all seurat objects to only include cells with RNA counts above 10,000 and then emrging them into a single Seurat object
 
@@ -108,12 +133,28 @@ for (i in seq_along(filt_obj_list)){
   print(ncol(seurat_counthresh))
 }
 
+
+#Merging and creating INTEGRATED URN seurat Object
+URN_int_seur<-merge(x=URNlist[[1]],y=URNlist[2:24])
+URN_int_seur <- JoinLayers(URN_int_seur)
+URN_int_seur[["RNA"]] <- split( URN_int_seur[["RNA"]], f = URN_int_seur$Sample)
+#Normalize and scale using traditional workflow SCTtransform was not playing nice with Integrate
+URN_int_seur <- NormalizeData(URN_int_seur)
+URN_int_seur <- FindVariableFeatures(URN_int_seur)
+URN_int_seur <- ScaleData(URN_int_seur)
+URN_int_seur <- RunPCA(URN_int_seur)
+
+URN_int_seur<-IntegrateLayers(object = URN_int_seur, method = CCAIntegration, orig.reduction = "pca", 
+                              new.reduction = "integrated.cca",verbose=FALSE)
+
+URN_int_seur[["RNA"]] <- JoinLayers(URN_int_seur[["RNA"]])
+saveRDS(UCC_int_seur,paste0(datapath,"/Seurat_Out/MergedObjects/URN_int_seur.rds"))
+
+#Merging and creating unintegrated URN seurat object
 URN_seur<-merge(x=URNlist[[1]],y=URNlist[2:24])
 URN_seur<-JoinLayers(URN_seur)
 
 saveRDS(URN_seur,paste0(datapath,"/Seurat_Out/MergedObjects/URN_seur.rds"))
-
-
 
 #switch to HUGGIN Server. Had to increase the size of memory available with
 # > options(future.globals.maxSize = 5 * 1024^3). to allow for URN seur
@@ -125,5 +166,3 @@ URN_seur<-SCTransform(URN_seur, vars.to.regress="percent.mt", verbose =FALSE)
 
 saveRDS(URN_seur,"/data/scRNA/HMC3_ZSC/Seurat_OUT/URN_norm_seur.rds")
 saveRDS(UCC_seur,"/data/scRNA/HMC3_ZSC/Seurat_OUT/UCC_norm_seur.rds")
-
-

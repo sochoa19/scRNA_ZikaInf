@@ -50,7 +50,7 @@ for (i in seq_along(obj_list)){
   #add Treatment C=Control, L=LPS, P=PIC
   seur[["Treatment"]]<-str_sub(filenames[i],-1)
   #add ZSC plasmid that was being transduced
-  seur[["Background"]]<-str_sub(filenames[i],-2,-2)
+  seur[["Background"]]<-str_sub(gsub("ZSC","",filenames[i]),1,-2)
   seur[["Sample"]]<-filenames[i]
   ###save plots to a png
   plot1 <- FeatureScatter(seur, feature1 = "nCount_RNA", feature2 = "percent.mt")

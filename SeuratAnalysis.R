@@ -14,13 +14,17 @@ UCC_seur<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/UCC_norm_seur.rds")
 URN_seur<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/URN_norm_seur.rds")
 
 #REad in the integrated normalized Seurat Object
-UCC_int_seur<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/URN_int_seur.rds")
-
+UCC_int_seur<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/UCC_int_seur.rds")
+#Fixing 12 Background label, it's fixed backed in object creation
+UCC_int_seur[["Background"]]<-str_sub(gsub("ZSC","",UCC_int_seur$Sample),1,-2)
+saveRDS(UCC_int_seur,"/data/scRNA/HMC3_ZSC/Seurat_OUT/UCC_int_seur.rds")
 #Populate Seur_target with whichever Seurat object you want to run DE and UMAP viz on
 #it will be used downstream for all the analyses, it will also pull the Name of the object to append to plot titles
 Seur_target<-UCC_int_seur
 Target_name<-"UCC_Integrated"
 
+
+for (i in unique(Seur_target$Background))
 
 #Making DE lists and volcano plots for the indicated Seurat object
 WT.PIC.de<-DEVolcano(Seur_target,"ZSCCP","ZSCCC","Sample")

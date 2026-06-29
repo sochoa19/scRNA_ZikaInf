@@ -19,7 +19,7 @@ UCC_int_seur<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/URN_int_seur.rds")
 #Populate Seur_target with whichever Seurat object you want to run DE and UMAP viz on
 #it will be used downstream for all the analyses, it will also pull the Name of the object to append to plot titles
 Seur_target<-UCC_int_seur
-Target_name<-"UCC Integrated"
+Target_name<-"UCC_Integrated"
 
 
 #Making DE lists and volcano plots for the indicated Seurat object
@@ -88,7 +88,7 @@ Seur_target <- RunUMAP(Seur_target, dims = 1:10, verbose = FALSE)
 DimPlot(Seur_target, reduction = "umap",group.by="Treatment",label=FALSE)+
 labs(title=paste0(Target_name,": UMAP"))
 
-saveRDS(Seur_target,paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,".rds"))
+saveRDS(Seur_target,paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"_final.rds"))
 
 
 ##FUNCTIONS LIVE BELOW!!!

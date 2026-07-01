@@ -8,71 +8,116 @@ library(Matrix)
 library(stringr)
 library(future)
 library(ggvenn)
+library(purrr)
+library(pheatmap)
 
 #Read in the normalized Seurat objects
 UCC_seur<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/UCC_norm_seur.rds")
 URN_seur<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/URN_norm_seur.rds")
 
-#REad in the integrated normalized Seurat Object
+#Read in the integrated normalized Seurat Object
 UCC_int_seur<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/UCC_int_seur.rds")
-#Fixing 12 Background label, it's fixed backed in object creation
-UCC_int_seur[["Background"]]<-str_sub(gsub("ZSC","",UCC_int_seur$Sample),1,-2)
-saveRDS(UCC_int_seur,"/data/scRNA/HMC3_ZSC/Seurat_OUT/UCC_int_seur.rds")
+
 #Populate Seur_target with whichever Seurat object you want to run DE and UMAP viz on
 #it will be used downstream for all the analyses, it will also pull the Name of the object to append to plot titles
 Seur_target<-UCC_int_seur
 Target_name<-"UCC_Integrated"
 
+#########Make Volcano plots for all Ctrl vs LPs or Ctrl vs PIC isnide of each genetic treatment
+#########Also finds the shared significant genes across all 
+de.L.list<-list()
+de.P.list<-list()
+sig.L.names<-list()
+sig.P.names<-list()
+hotfix<-c("4","7","C","J")
 
-for (i in unique(Seur_target$Background))
+#switched out this : unique(Seur_target$Background) for hotfix to rerun starting from 4
 
-#Making DE lists and volcano plots for the indicated Seurat object
-WT.PIC.de<-DEVolcano(Seur_target,"ZSCCP","ZSCCC","Sample")
-WT.LPS.de<-DEVolcano(Seur_target,"ZSCCL","ZSCCC","Sample")
+for (i in unique(Seur_target$Background)){
+  Cname=paste0("ZSC",i,"C")
+  Lname=paste0("ZSC",i,"L")
+  Pname=paste0("ZSC",i,"P")
+  de.L<-DEVolcano(Seur_target,Lname,Cname,"Sample")
+  de.P<-DEVolcano(Seur_target,Pname,Cname,"Sample")
+  sig.L.names<-append(sig.L.names,de.L[de.L$expression!="NS",7])
+  sig.P.names<-append(sig.P.names,de.P[de.P$expression!="NS",7])
+  de.L.list[[i]]<-de.L
+  de.P.list[[i]]<-de.P
+}
+#makes a unqiue lsit of all significant genes across al backgrounds
+all.sig.L<-unique(sig.L.names)
+all.sig.P<-unique(sig.P.names)
+#saves a list fo dataframes, each one with the DE results for each treatment vs its isogenic ctrl
+saveRDS(de.L.list,paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/vsL_DE.rds"))
+saveRDS(de.P.list,paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/vsP_DE.rds"))
 
-J.PIC.de<-DEVolcano(Seur_target,"ZSCJP","ZSCJC","Sample")
-J.LPS.de<-DEVolcano(Seur_target,"ZSCJL","ZSCJC","Sample")
+#####Make a list of dataframe of only the upregulated or downregulated genes across samples
+##and separate a list of genes 
 
-Wt.pic.sig<-WT.PIC.de[WT.PIC.de$expression!="NS",c(2,5,7)]
-Wt.lps.sig<-WT.LPS.de[WT.LPS.de$expression!="NS",c(2,5,7)]
-J.pic.sig<-J.PIC.de[J.PIC.de$expression!="NS",c(2,5,7)]
-J.lps.sig<-J.LPS.de[J.LPS.de$expression!="NS",c(2,5,7)]
+L.up.gene_sets <- map(de.L.list, ~{
+  .x %>%
+    filter(expression != "Up") %>%
+    pull(gene) %>%
+    unique()
+})
+L.up.WT.genes<-L.up.gene_sets[["C"]]
 
-vennlist<-list(
-  WTP=Wt.pic.sig$gene,
-  WTL=Wt.lps.sig$gene,
-  JP=J.pic.sig$gene,
-  JL=J.lps.sig$gene
+L.down.gene_sets <- map(de.L.list, ~{
+  .x %>%
+    filter(expression != "Down") %>%
+    pull(gene) %>%
+    unique()
+})
+L.down.WT.genes<-L.down.gene_sets[["C"]]
+
+P.up.gene_sets <- map(de.P.list, ~{
+  .x %>%
+    filter(expression != "Up") %>%
+    pull(gene) %>%
+    unique()
+})
+P.up.WT.genes<-P.up.gene_sets[["C"]]
+
+P.down.gene_sets <- map(de.P.list, ~{
+  .x %>%
+    filter(expression != "Down") %>%
+    pull(gene) %>%
+    unique()
+})
+P.down.WT.genes<-P.down.gene_sets[["C"]]
+
+#Calculate the jaccard index between the control DE significant genes
+#and the ones found in other backgrounds 
+setname<-P.down.gene_sets
+compname<-P.down.WT.genes
+
+jaccard <- map_dbl(setname, function(x){
+  
+  intersection <- length(intersect(compname, x))
+  union <- length(union(compname, x))
+  
+  intersection / union
+  
+})
+
+#Turning it into a matrix
+J <- matrix(
+  jaccard,
+  ncol = 1,
+  dimnames = list(names(jaccard), "WT")
 )
 
-#Venn diagram of all significant genes and all non Zika samples. 
-ggvenn(
-  vennlist, 
-  fill_color = c("#0073C2FF", "#EFC000FF", "#868686FF", "#CD534CFF"),
-  stroke_size = 0.5, set_name_size = 4
-) +
-  labs(title=paste0(Target_name,"All Significant Genes vs their isogenic control"))
+#Visualize jaccard in a heatmap
+pheatmap(
+  J,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  display_numbers = TRUE,
+  number_format = "%.2f",
+  color = colorRampPalette(c("white", "gold", "red"))(100)
+)
 
-ggvenn(
-  vennlist[1:2], 
-  fill_color = c("#0073C2FF", "#EFC000FF"),
-  stroke_size = 0.5, set_name_size = 4
-) +
-  labs(title=paste0(Target_name,"All Significant Genes in WT samples"))
 
-ggvenn(
-  vennlist[3:4], 
-  fill_color = c( "#868686FF", "#CD534CFF"),
-  stroke_size = 0.5, set_name_size = 4
-) +
-  labs(title=paste0(Target_name,"All Significant Genes in J samples"))
-
-ggvenn(
-  vennlist[c(1,3)], 
-  fill_color = c( "#868686FF", "#0073C2FF"),
-  stroke_size = 0.5, set_name_size = 4
-) +
-  labs(title=paste0(Target_name,": All Significant Genes in P samples"))
 
 
 # PCA and visualization
@@ -92,7 +137,7 @@ Seur_target <- RunUMAP(Seur_target, dims = 1:10, verbose = FALSE)
 DimPlot(Seur_target, reduction = "umap",group.by="Treatment",label=FALSE)+
 labs(title=paste0(Target_name,": UMAP"))
 
-saveRDS(Seur_target,paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"_final.rds"))
+saveRDS(Seur_target,paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/",Target_name,"_final.rds"))
 
 
 ##FUNCTIONS LIVE BELOW!!!
@@ -144,7 +189,7 @@ DEVolcano<-function(SeurFile,Target1,Target2,Focus){
       y = "-Log10 p-value-adj"
     ) +
     theme_minimal()
-  
+  ggsave(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Figures/VolcanoPlots/",Target1 ,".png"), width = 6, height = 4, dpi = 300)
   print(volcano)
   invisible(volcano)
   return(deFile)

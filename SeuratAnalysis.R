@@ -10,6 +10,8 @@ library(future)
 library(ggvenn)
 library(purrr)
 library(pheatmap)
+library(clusterProfiler)
+library(org.Hs.eg.db)
 
 #Read in the normalized Seurat objects
 UCC_seur<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/UCC_norm_seur.rds")
@@ -134,8 +136,15 @@ Seur_target <- FindClusters(Seur_target, verbose = FALSE)
 
 Seur_target <- RunUMAP(Seur_target, dims = 1:10, verbose = FALSE)
 
+#Plotting UMAP grouping by treatments
 DimPlot(Seur_target, reduction = "umap",group.by="Treatment",label=FALSE)+
 labs(title=paste0(Target_name,": UMAP"))
+ggsave(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Figures/UMAP/TreatmentUmap.png"))
+
+#Plotting UMAP grouping by sample
+DimPlot(Seur_target, reduction = "umap",group.by="Sample",label=FALSE)+
+  labs(title=paste0(Target_name,": UMAP"))
+ggsave(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Figures/UMAP/SampleUmap.png"))
 
 saveRDS(Seur_target,paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/",Target_name,"_final.rds"))
 

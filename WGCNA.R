@@ -164,7 +164,309 @@ hub_df <- GetHubGenes(wg_seurat_obj, n_hubs = 10)
 
 head(hub_df)
 
+modules <- GetModules(wg_seurat_obj)
+mods <- levels(modules$module); mods <- mods[mods != 'grey']
 
+#######RUNNING GO on the modules and on the genes with kme above 0.5?
+library(clusterProfiler)
+library(AnnotationDbi)
+library(org.Hs.eg.db)
+
+#getting the entrez ids of all the possible genes
+universe.symb <- bitr(
+  modules$gene_name,
+  fromType = "SYMBOL",
+  toType = "ENTREZID",
+  OrgDb = org.Hs.eg.db
+)
+
+universe.ensembl <- bitr(
+  modules[grepl("ENSG",modules$gene_name),1],
+  fromType = "ENSEMBL",
+  toType = "ENTREZID",
+  OrgDb = org.Hs.eg.db
+)
+
+
+univ.combined<-append(universe.symb$ENTREZID, universe.ensembl$ENTREZID)
+
+
+#loop for creating GO BP terms dot plots
+noGO<-list()
+for (i in mods){
+  currcolor<-i
+  genelist<-modules[modules$color==currcolor,1]
+  
+  #Convert all the gene symbols into entrez ids. 
+  gene.symb <- bitr(
+    genelist,
+    fromType = "SYMBOL",
+    toType = "ENTREZID",
+    OrgDb = org.Hs.eg.db
+  )
+  
+  if (length(grep(paste(genelist[grepl("ENSG",genelist)],collapse="|"),keys(org.Hs.eg.db, keytype = "ENSEMBL")))==0
+  ){
+    gene.combined<-gene.symb$ENTREZID
+  
+  }else{
+    gene.ensembl<- bitr(
+    genelist[grepl("ENSG",genelist)],
+    fromType= "ENSEMBL",
+    toType = "ENTREZID",
+    OrgDb = org.Hs.eg.db
+    
+  )
+  
+  gene.combined <-append(gene.symb$ENTREZID,gene.ensembl$ENTREZID)
+      
+  }
+  
+  
+  qcutoff=0.05
+  ego <- enrichGO(
+    gene = gene.combined,
+    universe = univ.combined,
+    OrgDb = org.Hs.eg.db,
+    keyType = "ENTREZID",
+    ont = "BP",
+    readable = TRUE,
+    qvalueCutoff = qcutoff
+
+  )
+  
+  if(sum(ego@result$qvalue<=qcutoff)==0){
+    print(paste0("The ",currcolor, " module does not have any significant terms associated to it"))
+    noGO<-append(noGO,currcolor)
+    next
+  }
+  
+  dotplot(ego, showCategory = 10)+
+  ggtitle(paste0("GO enrichment of ", currcolor, " module"))
+  ggsave(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/WGCNA/Figures/GO/BP/",currcolor,"_GO.png"),height=1800,width=2200,units= "px", dpi= 300)
+  
+}
+capture.output(noGO,file = paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/WGCNA/Figures/GO/BP/nonSigModules.txt"))
+
+#loop for creating GO MF terms dot plots
+noGO<-list()
+for (i in mods){
+  currcolor<-i
+  genelist<-modules[modules$color==currcolor,1]
+  
+  #Convert all the gene symbols into entrez ids. 
+  gene.symb <- bitr(
+    genelist,
+    fromType = "SYMBOL",
+    toType = "ENTREZID",
+    OrgDb = org.Hs.eg.db
+  )
+  
+  if (length(grep(paste(genelist[grepl("ENSG",genelist)],collapse="|"),keys(org.Hs.eg.db, keytype = "ENSEMBL")))==0
+  ){
+    gene.combined<-gene.symb$ENTREZID
+    
+  }else{
+    gene.ensembl<- bitr(
+      genelist[grepl("ENSG",genelist)],
+      fromType= "ENSEMBL",
+      toType = "ENTREZID",
+      OrgDb = org.Hs.eg.db
+      
+    )
+    
+    gene.combined <-append(gene.symb$ENTREZID,gene.ensembl$ENTREZID)
+    
+  }
+  
+  
+  qcutoff=0.05
+  ego <- enrichGO(
+    gene = gene.combined,
+    universe = univ.combined,
+    OrgDb = org.Hs.eg.db,
+    keyType = "ENTREZID",
+    ont = "MF",
+    readable = TRUE,
+    qvalueCutoff = qcutoff
+    
+  )
+  
+  if(sum(ego@result$qvalue<=qcutoff)==0){
+    print(paste0("The ",currcolor, " module does not have any significant terms associated to it"))
+    noGO<-append(noGO,currcolor)
+    next
+  }
+  
+  dotplot(ego, showCategory = 10)+
+    ggtitle(paste0("GO enrichment of ", currcolor, " module"))
+  ggsave(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/WGCNA/Figures/GO/MF/",currcolor,"_GO.png"),height=1800,width=2200,units= "px", dpi= 300)
+  
+}
+capture.output(noGO,file = paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/WGCNA/Figures/GO/MF/nonSigModules.txt"))
+
+#loop for creating GO CC terms dot plots
+noGO<-list()
+for (i in mods){
+  currcolor<-i
+  genelist<-modules[modules$color==currcolor,1]
+  
+  #Convert all the gene symbols into entrez ids. 
+  gene.symb <- bitr(
+    genelist,
+    fromType = "SYMBOL",
+    toType = "ENTREZID",
+    OrgDb = org.Hs.eg.db
+  )
+  
+  if (length(grep(paste(genelist[grepl("ENSG",genelist)],collapse="|"),keys(org.Hs.eg.db, keytype = "ENSEMBL")))==0
+  ){
+    gene.combined<-gene.symb$ENTREZID
+    
+  }else{
+    gene.ensembl<- bitr(
+      genelist[grepl("ENSG",genelist)],
+      fromType= "ENSEMBL",
+      toType = "ENTREZID",
+      OrgDb = org.Hs.eg.db
+      
+    )
+    
+    gene.combined <-append(gene.symb$ENTREZID,gene.ensembl$ENTREZID)
+    
+  }
+  
+  
+  qcutoff=0.05
+  ego <- enrichGO(
+    gene = gene.combined,
+    universe = univ.combined,
+    OrgDb = org.Hs.eg.db,
+    keyType = "ENTREZID",
+    ont = "CC",
+    readable = TRUE,
+    qvalueCutoff = qcutoff
+    
+  )
+  
+  if(sum(ego@result$qvalue<=qcutoff)==0){
+    print(paste0("The ",currcolor, " module does not have any significant terms associated to it"))
+    noGO<-append(noGO,currcolor)
+    next
+  }
+  
+  dotplot(ego, showCategory = 10)+
+    ggtitle(paste0("GO enrichment of ", currcolor, " module"))
+  ggsave(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/WGCNA/Figures/GO/CC/",currcolor,"_GO.png"),height=1800,width=2200,units= "px", dpi= 300)
+  
+}
+capture.output(noGO,file = paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/WGCNA/Figures/GO/CC/nonSigModules.txt"))
+
+#loop for creating GO ALL terms dot plots
+noGO<-list()
+for (i in mods){
+  currcolor<-i
+  genelist<-modules[modules$color==currcolor,1]
+  
+  #Convert all the gene symbols into entrez ids. 
+  gene.symb <- bitr(
+    genelist,
+    fromType = "SYMBOL",
+    toType = "ENTREZID",
+    OrgDb = org.Hs.eg.db
+  )
+  
+  if (length(grep(paste(genelist[grepl("ENSG",genelist)],collapse="|"),keys(org.Hs.eg.db, keytype = "ENSEMBL")))==0
+  ){
+    gene.combined<-gene.symb$ENTREZID
+    
+  }else{
+    gene.ensembl<- bitr(
+      genelist[grepl("ENSG",genelist)],
+      fromType= "ENSEMBL",
+      toType = "ENTREZID",
+      OrgDb = org.Hs.eg.db
+      
+    )
+    
+    gene.combined <-append(gene.symb$ENTREZID,gene.ensembl$ENTREZID)
+    
+  }
+  
+  
+  qcutoff=0.05
+  ego <- enrichGO(
+    gene = gene.combined,
+    universe = univ.combined,
+    OrgDb = org.Hs.eg.db,
+    keyType = "ENTREZID",
+    ont = "ALL",
+    readable = TRUE,
+    qvalueCutoff = qcutoff
+    
+  )
+  
+  if(sum(ego@result$qvalue<=qcutoff)==0){
+    print(paste0("The ",currcolor, " module does not have any significant terms associated to it"))
+    noGO<-append(noGO,currcolor)
+    next
+  }
+  
+  dotplot(ego, showCategory = 10)+
+    ggtitle(paste0("GO enrichment of ", currcolor, " module"))
+  ggsave(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/WGCNA/Figures/GO/ALL/",currcolor,"_GO.png"),height=1800,width=2200,units= "px", dpi= 300)
+  
+}
+capture.output(noGO,file = paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/WGCNA/Figures/GO/ALL/nonSigModules.txt"))
+
+
+
+
+
+##CHEKC THING####
+genelist<-modules[modules$color=="blue",1]
+
+
+#Convert all the gene symbols into entrez ids. 
+gene.symb <- bitr(
+  genelist,
+  fromType = "SYMBOL",
+  toType = "ENTREZID",
+  OrgDb = org.Hs.eg.db
+)
+
+if (length(grep(paste(genelist[grepl("ENSG",genelist)],collapse="|"),keys(org.Hs.eg.db, keytype = "ENSEMBL")))==0
+){
+  gene.combined<-gene.symb$ENTREZID
+} else {
+  gene.ensembl<- bitr(
+  genelist[grepl("ENSG",genelist)],
+  fromType= "ENSEMBL",
+  toType = "ENTREZID",
+  OrgDb = org.Hs.eg.db
+  
+)
+
+gene.combined <-append(gene.symb$ENTREZID,gene.ensembl$ENTREZID)
+
+}
+
+
+
+ego <- enrichGO(
+  gene = gene.combined,
+  universe = univ.combined,
+  OrgDb = org.Hs.eg.db,
+  keyType = "ENTREZID",
+  ont = "BP",
+  readable = TRUE
+  
+)
+
+if(is.null(ego)){
+  print(paste0("The ",currcolor, "module does not have any significant terms associated to it"))
+  noGO<-append(noGO,currcolor)
+}
 
 
 #Metacells and module eigengene expression of these

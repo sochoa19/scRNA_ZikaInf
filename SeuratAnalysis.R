@@ -10,8 +10,7 @@ library(future)
 library(ggvenn)
 library(purrr)
 library(pheatmap)
-library(clusterProfiler)
-library(org.Hs.eg.db)
+
 
 #Read in the normalized Seurat objects
 UCC_seur<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/UCC_norm_seur.rds")
@@ -120,7 +119,7 @@ pheatmap(
 )
 
 
-
+###########END OF DIFFERNTIAL EXPRESSION######
 
 # PCA and visualization
 Seur_target <- RunPCA(Seur_target, verbose = FALSE)

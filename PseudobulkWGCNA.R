@@ -50,12 +50,12 @@ seurat_obj <- SetDatExpr(
 )
 
 ####
-# example only, not run for this tutorial.
-#seurat_obj <- SetDatExpr(
-#  seurat_obj,
-#  mat = se[,colData(se)$Background == 'C'], 
-#  layer = 'VST'
-#)
+# subset the WT samples only for pseudobulking
+seurat_obj <- SetDatExpr(
+  seurat_obj,
+  mat = se[,colData(se)$Background == 'C'], 
+  layer = 'VST'
+)
 ##
 
 # select the soft power threshold

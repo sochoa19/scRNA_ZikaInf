@@ -10,30 +10,30 @@ library(future)
 library(ggvenn)
 library(purrr)
 library(pheatmap)
+library(fs)
 
-
-#Read in the normalized Seurat objects
-UCC_seur<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/UCC_norm_seur.rds")
-URN_seur<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/URN_norm_seur.rds")
-
-#Read in the integrated normalized Seurat Object
-UCC_int_seur<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/UCC_int_seur.rds")
 
 #Populate Seur_target with whichever Seurat object you want to run DE and UMAP viz on
 #it will be used downstream for all the analyses, it will also pull the Name of the object to append to plot titles
-Seur_target<-UCC_int_seur
-Target_name<-"UCC_Integrated"
+Target_name<-"URN_int"
+datain<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/")
+dataout<-paste0(datain,Target_name,"/Seurat_Analysis/")
 
-#########Make Volcano plots for all Ctrl vs LPs or Ctrl vs PIC isnide of each genetic treatment
+dir_create(dataout)
+dir_create(paste0(dataout,"Figures/Dimensional_Reduction"),recurse=TRUE)
+dir_create(paste0(dataout,"Figures/VolcanoPlots"),recurse=TRUE)
+
+Seur_target<-readRDS(paste0(datain,Target_name,"_seur.rds"))
+
+###DIFFERENTIAL EXPRESSION ####
+#########Make Volcano plots for all Ctrl vs LPs or Ctrl vs PIC inside of each genetic treatment
 #########Also finds the shared significant genes across all 
 de.L.list<-list()
 de.P.list<-list()
 sig.L.names<-list()
 sig.P.names<-list()
-hotfix<-c("4","7","C","J")
-
-#switched out this : unique(Seur_target$Background) for hotfix to rerun starting from 4
-
+#Itereate DEVOlcano function over each abckground of the dataset. 
+#This way you're getting PIC and LPS DE analysis inside each background
 for (i in unique(Seur_target$Background)){
   Cname=paste0("ZSC",i,"C")
   Lname=paste0("ZSC",i,"L")
@@ -49,8 +49,8 @@ for (i in unique(Seur_target$Background)){
 all.sig.L<-unique(sig.L.names)
 all.sig.P<-unique(sig.P.names)
 #saves a list fo dataframes, each one with the DE results for each treatment vs its isogenic ctrl
-saveRDS(de.L.list,paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/vsL_DE.rds"))
-saveRDS(de.P.list,paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/vsP_DE.rds"))
+saveRDS(de.L.list,paste0(dataout,"vsL_DE.rds"))
+saveRDS(de.P.list,paste0(dataout,"vsP_DE.rds"))
 
 #####Make a list of dataframe of only the upregulated or downregulated genes across samples
 ##and separate a list of genes 
@@ -119,7 +119,7 @@ pheatmap(
 )
 
 
-###########END OF DIFFERNTIAL EXPRESSION######
+###########Dimensional Reduction########
 
 # PCA and visualization
 Seur_target <- RunPCA(Seur_target, verbose = FALSE)
@@ -127,6 +127,7 @@ VizDimLoadings(Seur_target, dims = 1:2, reduction = "pca")
 Idents(Seur_target) <- "Treatment"
 
 DimPlot(Seur_target, reduction = "pca") 
+ggsave(paste0(dataout,"Figures/Dimensional_Reduction/TreatmentPCA.png"))
 
 #Clustering and UMAP visualization
 Seur_target <- FindNeighbors(Seur_target, dims = 1:10, verbose = FALSE)
@@ -138,17 +139,17 @@ Seur_target <- RunUMAP(Seur_target, dims = 1:10, verbose = FALSE)
 #Plotting UMAP grouping by treatments
 DimPlot(Seur_target, reduction = "umap",group.by="Treatment",label=FALSE)+
 labs(title=paste0(Target_name,": UMAP"))
-ggsave(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Figures/UMAP/TreatmentUmap.png"))
+ggsave(paste0(dataout,"Figures/Dimensional_Reduction/TreatmentUmap.png"))
 
 #Plotting UMAP grouping by sample
 DimPlot(Seur_target, reduction = "umap",group.by="Sample",label=FALSE)+
   labs(title=paste0(Target_name,": UMAP"))
-ggsave(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Figures/UMAP/SampleUmap.png"))
+ggsave(paste0(dataout,"Figures/Dimensional_Reduction/SampleUmap.png"))
 
-saveRDS(Seur_target,paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/",Target_name,"_final.rds"))
+saveRDS(Seur_target,paste0(dataout,Target_name,"_final.rds"))
 
 
-##FUNCTIONS LIVE BELOW!!!
+##FUNCTIONS LIVE BELOW!!!####
 
 
 #DE of WT background Ctrl vs LPS & Ctrl vs PIC
@@ -197,7 +198,7 @@ DEVolcano<-function(SeurFile,Target1,Target2,Focus){
       y = "-Log10 p-value-adj"
     ) +
     theme_minimal()
-  ggsave(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Figures/VolcanoPlots/",Target1 ,".png"), width = 6, height = 4, dpi = 300)
+  ggsave(paste0(dataout,"Figures/VolcanoPlots/",Target1 ,".png"), width = 6, height = 4, dpi = 300)
   print(volcano)
   invisible(volcano)
   return(deFile)

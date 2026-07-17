@@ -148,7 +148,7 @@ URN_int_seur<-IntegrateLayers(object = URN_int_seur, method = CCAIntegration, or
                               new.reduction = "integrated.cca",verbose=FALSE)
 
 URN_int_seur[["RNA"]] <- JoinLayers(URN_int_seur[["RNA"]])
-saveRDS(UCC_int_seur,paste0(datapath,"/Seurat_Out/MergedObjects/URN_int_seur.rds"))
+saveRDS(URN_int_seur,paste0(datapath,"/Seurat_Out/MergedObjects/URN_int_seur.rds"))
 
 #Merging and creating unintegrated URN seurat object
 URN_seur<-merge(x=URNlist[[1]],y=URNlist[2:24])

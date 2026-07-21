@@ -15,10 +15,10 @@ library(hdWGCNA)
 
 #general help
 library(fs)
-Target_name<-"URN_int"
+Target_name<-"UCC_Integrated"
 
 #Provide attempt number. This is to keep straight what module results are tied to which metacell construction and hdWGCNA parameter
-Attempt_Number<-"1"
+Attempt_Number<-"2"
 
 
 datain<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Seurat_Analysis")
@@ -113,7 +113,7 @@ PlotDendrogram(wt_seurat_obj, main='WT isolate hdWGCNA Dendrogram')
 
 p1 <- DimPlot(wt_seurat_obj, group.by='Treatment') +
   umap_theme() +
-  ggtitle('WT metacell Isolate') 
+  ggtitle('WT  Isolate') 
   
 
 p2 <- DimPlot(seurat_obj, group.by='Treatment') +

@@ -1,4 +1,4 @@
-#Metaell Parameter Testing
+#Metacell Parameter Testing
 #We want to knwo wha the ebst k parameter, min cells and max shared numbers might be to produce the highest
 #quality metacell while retaining the most real variance in the data
 
@@ -15,10 +15,10 @@ library(WGCNA)
 library(hdWGCNA)
 
 
-Target_name<-"UCC_Integrated"
+Target_name<-"URN_int"
 
 
-seurat_obj<-readRDS(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/",Target_name,"_final.rds"))
+seurat_obj<-readRDS(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Seurat_Analysis/",Target_name,"_final.rds"))
 
 
 # using the cowplot theme for ggplot
@@ -60,30 +60,47 @@ colnames(result_df)<-c("Metacell_number","Avg_grain","Avg_INV","Avg_Separation",
 
 result_df<-  result_df %>%
   mutate(
-  K_paremeter = as.character(K_parameter),
-  max_shared_cells = as.character(max_shared_cells)
+  K_paremeter = as.numeric(K_parameter),
+  max_shared_cells = as.numeric(max_shared_cells)
 )
 
 
+Metrics<-c("Metacell_number","Avg_INV","Avg_Separation")
+for (i in Metrics){
+  #Heatmap for the different Metacell quality statistics
+  ggplot(result_df, aes(x = K_parameter, y = max_shared_cells, fill = .data[[i]])) +
+    geom_tile(color = "white", linewidth = 0.5) +          # Adds clean white borders between tiles
+    scale_fill_viridis_c(option = "viridis") +        # Colorblind-friendly continuous color scale
+    #geom_text(aes(label = .data[[i]]), color = "white", size = 2) + # Labels each tile
+    labs(
+      title = paste0(Target_name," ",gsub("_"," ",i), " across metacell creation parameters"),
+      x = "K parameter",
+      y = "Max shared cells between clusters",
+      fill = gsub("_","",i)
+    ) +
+    theme_minimal() +                                 # Clean, minimal presentation theme
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1) # Tilts X labels if text overlaps
+    )
+  ggsave(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Metacell_Analysis/",i,".png"))
+}
 
 #Heatmap for the different Metacell quality statistics
-ggplot(result_df, aes(x = K_parameter, y = max_shared_cells, fill = Metacell_number)) +
+ggplot(result_df, aes(x = K_parameter, y = max_shared_cells, fill = .data[[Metrics[1]]])) +
   geom_tile(color = "white", linewidth = 0.5) +          # Adds clean white borders between tiles
   scale_fill_viridis_c(option = "viridis") +        # Colorblind-friendly continuous color scale
-  geom_text(aes(label = Metacell_number), color = "white", size = 2) + # Labels each tile
+  geom_text(aes(label = .data[[Metrics[1]]]), color = "white", size = 2) + # Labels each tile
   labs(
-    title = "metacell number across metacell creation parameters",
+    title = paste0(Target_name," ",gsub("_"," ",Metrics[1]), " across metacell creation parameters"),
     x = "K parameter",
-    y = "Max shared cells betweenc clusters",
-    fill = "Metacell number "
+    y = "Max shared cells between clusters",
+    fill = gsub("_","",Metrics[1])
   ) +
   theme_minimal() +                                 # Clean, minimal presentation theme
   theme(
     axis.text.x = element_text(angle = 45, hjust = 1) # Tilts X labels if text overlaps
   )
-
-#The result list order is
-#Number of metacells, avg number of cells per metacell, avg INV, Avg separation, k parameter, max shared parameter
+ggsave(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Metacell_Analysis/Metacell_number.png"))
 
 #Function that calculates INV, and metacell separation from metacell construction based on k and max shared
 Metacell_analysis<-function(wt_seurat_obj,k.parameter,max_shared){

@@ -15,10 +15,10 @@ library(hdWGCNA)
 
 #general help
 library(fs)
-Target_name<-"UCC_Integrated"
+Target_name<-"URN_int"
 
 #Provide attempt number. This is to keep straight what module results are tied to which metacell construction and hdWGCNA parameter
-Attempt_Number<-"2"
+Attempt_Number<-"1"
 
 
 datain<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Seurat_Analysis")
@@ -51,7 +51,7 @@ enableWGCNAThreads(nThreads = 4)
 ###Create wild type seurat object
 wt_seurat_obj<-subset(seurat_obj, subset= Background=="C")
 
-#Set uo subsetted object for WGCNA
+#Set up subsetted object for WGCNA
 wt_seurat_obj <- SetupForWGCNA(
   wt_seurat_obj,
   gene_select = "fraction", # the gene selection approach
@@ -142,6 +142,7 @@ plot_list <- ModuleFeaturePlot(
   features='MEs', # plot the MEs
   order=TRUE # order so the points with highest MEs are on top
 )
+
 ME<-GetMEs(seurat_obj)
 # stitch together with patchwork
 wrap_plots(plot_list, ncol=6)
@@ -186,13 +187,22 @@ for (i in unique(seurat_obj$Treatment)){
   
 }
 
+#How to 
+#z$data <- z$data %>%
+#  group_by(features.plot) %>%
+#  mutate(
+#    avg.exp.scaled =
+#      avg.exp.scaled -
+#      avg.exp.scaled[id == "C"]
+#  ) %>%
+#  ungroup()
 
-
+#z
 
 ##############GO TERMS##################
 #reading in the WGCNAed seurat objects. botht the reference and the query
 
-#######RUNNING GO on the modules and on the genes with kme above 0.5?
+#######RUNNING GO on the modules and on the genes with kme above 0.5
 library(clusterProfiler)
 library(AnnotationDbi)
 library(org.Hs.eg.db)
@@ -227,7 +237,7 @@ univ.combined<-append(universe.symb$ENTREZID, universe.ensembl$ENTREZID)
 #initialize a list to populate with modules with no significant GO terms
 noGO<-list()
 
-ontol<-"ALL" #This can be changed depending on what ontology database you want to use
+ontol<-"BP" #This can be changed depending on what ontology database you want to use
 dir_create(paste0(dataout, "/Figures/GO/",ontol),recurse=TRUE)
 
 for (i in mods){

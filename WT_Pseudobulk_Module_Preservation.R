@@ -23,8 +23,8 @@ set.seed(12345)
 enableWGCNAThreads(nThreads = 4)
 
 #Change these values to read in different versions of the seurat objects
-Attempt_number<-"2"
-Target_name<-"UCC_Integrated"
+Attempt_number<-"1"
+Target_name<-"URN_int"
 
 #read in wt seurat object post WGCNA 
 wtdatain<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Isolate_WGCNA/Attempt_",Attempt_number,"/")
@@ -83,7 +83,7 @@ seurat_obj <- ProjectModules(
   seurat_obj = seurat_obj,
   seurat_ref = wt_seurat_obj,
   wgcna_name = "WT_isolate",
-  wgcna_name_proj="projected",
+  wgcna_name_proj="pseudobulk",
   assay="RNA" # assay for query dataset
 )
 
@@ -113,11 +113,13 @@ dir_create(paste0(wtdatain,"WT_to_Pseudo/Figures"),recurse = TRUE)
 saveRDS(mod_pres,paste0(wtdatain,"WT_to_Pseudo/mod_pres.rds"))
 saveRDS(obs_df,paste0(wtdatain,"WT_to_Pseudo/obs_df.rds"))
 
+library(dplyr)
 #plot summary stats
 plot_list <- PlotModulePreservation(
   seurat_obj,
   name="WT to Pseudobulk",
-  statistics = "summary"
+  statistics = "summary",
+  wgcna_name = "pseudobulk"
 )
 
 wrap_plots(plot_list, ncol=2)

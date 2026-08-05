@@ -8,6 +8,7 @@ library(Seurat)
 library(tidyverse)
 library(cowplot)
 library(patchwork)
+library(scatterpie)
 
 # co-expression network analysis packages:
 library(WGCNA)
@@ -15,10 +16,10 @@ library(hdWGCNA)
 
 #general help
 library(fs)
-Target_name<-"URN_int"
+Target_name<-"UCC_Integrated"
 
 #Provide attempt number. This is to keep straight what module results are tied to which metacell construction and hdWGCNA parameter
-Attempt_Number<-"1"
+Attempt_Number<-"4"
 
 
 datain<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Seurat_Analysis")
@@ -40,8 +41,11 @@ set.seed(12345)
 k.parameter<-60
 max_shared<-15
 net.type<-"signed"
+merge_height<-0.20
+deep_split<-3
+mod_size<-60
 
-parameter_list<-c(k.parameter,max_shared,net.type,Target_name,Attempt_Number)
+parameter_list<-c(k.parameter,max_shared,net.type,Target_name,Attempt_Number,merge_height,deep_split,mod_size)
 saveRDS(parameter_list,paste0(dataout,"/Parameter_list.rds"))
 
 # optionally enable multithreading
@@ -75,6 +79,68 @@ wt_seurat_obj <- MetacellsByGroups(
 wt_seurat_obj <- NormalizeMetacells(wt_seurat_obj)
 
 
+frac <- prop.table(table(
+  wt_seurat_obj$Treatment[cells_in_metacell]
+))
+
+###UMAP OF METACELLS ONLY####
+
+dim(mc)
+head(mc@meta.data)
+colnames(mc@meta.data)
+mc <- GetMetacellObject(wt_seurat_obj)
+mc <- FindVariableFeatures(mc)
+mc <- ScaleData(mc)
+mc <- RunPCA(mc)
+mc <- RunUMAP(mc, dims = 1:20)
+
+cell_meta <- wt_seurat_obj@meta.data
+
+frac_df <- lapply(seq_len(nrow(mc)), function(i){
+  
+  cells <- strsplit(mc$cells_merged[i], ",")[[1]]
+  
+  tab <- prop.table(table(cell_meta[cells, "Treatment"]))
+  
+  data.frame(
+    metacell = rownames(mc@meta.data)[i],
+    Control = ifelse("C" %in% names(tab), tab["C"], 0),
+    LPS     = ifelse("L" %in% names(tab), tab["L"], 0),
+    PIC     = ifelse("P" %in% names(tab), tab["P"], 0)
+  )
+})
+
+frac_df <- bind_rows(frac_df)
+
+frac_df<-frac_df[!is.na(frac_df$metacell),]
+
+umap <- Embeddings(mc, "umap") |>
+  as.data.frame() |>
+  tibble::rownames_to_column("metacell")
+
+plot_df <- left_join(umap, frac_df, by = "metacell")
+
+ggplot(plot_df) +
+  geom_scatterpie(
+    aes(x = umap_2, y = umap_1),
+    cols = c("Control", "LPS", "PIC"),
+    pie_scale = 1.5
+  ) +
+  xlab("umap_1")+
+  ylab("umap_2")+
+  labs(title=paste0(Target_name,"_",Attempt_Number,":WT Metacell UMAP"))+
+  coord_equal() +
+  theme_classic()
+
+ggsave(paste0(dataout,"/Figures/MetacellUmap.png"))
+
+
+DimPlot(wt_seurat_obj,group.by="Treatment")+
+  labs(title = paste0(Target_name,"_",Attempt_Number,":WT UMAP"))
+
+ggsave(paste0(dataout,"/Figures/WTcellUmap.png"))
+
+
 
 ##########WGCNA and correlation of modules####
 #Run hdWGCNA on only the WT cells. THis will allow for the discovery of
@@ -105,6 +171,9 @@ wt_seurat_obj <- ConstructNetwork(
   networktype=net.type,
   tom_name = 'WT_isolate' , # name of the topological overlap matrix written to disk
   #tom_outdir= paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/WGCNA"),
+  deepSplit = deep_split,
+  minModuleSize = mod_size,
+  mergeCutHeight = merge_height,
   overwrite_tom=TRUE
   
 )
@@ -150,6 +219,7 @@ ggsave(paste0(dataout,"/Figures/ModuleUMAP.png"),width=10,height=8)
 
 ##correlelogram to check module correlation
 ModuleCorrelogram(seurat_obj,features="MEs")
+ggsave(paste0(dataout,"/Figures/Correlelogram.png"))
 
 
 

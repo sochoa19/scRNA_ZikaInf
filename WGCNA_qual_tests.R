@@ -260,8 +260,8 @@ for (i in list.files(paste0(data_out,"/modsize_merge_deepsplit/"),pattern="\\.rd
 }
 
 plot_df <- stack(zsumms)
-colnames(plot_df) <- c("Value", "Group")
-ggplot(plot_df, aes(x = Group, y = Value)) +
+colnames(plot_df) <- c("Zsumm", "Parameter_Combination_modsize_mergeheight_deepsplit")
+ggplot(plot_df, aes(x = Parameter_Combination_modsize_mergeheight_deepsplit, y = Zsumm)) +
   geom_violin(trim = FALSE, fill = "lightblue") +
   geom_jitter(width = 0.1, size = 1, alpha = 0.4) +
   stat_summary(
@@ -513,6 +513,8 @@ Complete_WGCNA<-function(seurat_obj,bulk_obj,param_list){
     nPermutations = 150 # set this to whatever number is suitable for you
   )
   pres <- mp$preservation$Z[[1]][[2]]
+  
+  pres<-pres[!rownames(pres) %in% c("grey","gold"),]
   
   module.df$size<-NA
   module.df$Bulk_Preservation<-NA

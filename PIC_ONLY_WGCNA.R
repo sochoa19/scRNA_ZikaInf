@@ -1,5 +1,6 @@
-#Repeat WGCNA script but subsetting the WT samples entirely before getting metacells
-#hdWGCNA analysis taking SeuratObjects 
+#PIC Isolate WGCNA
+#Runs WGCNA on PIC treated cells in teh WT group and compares them agaisnt PIC treated cells in toehr backgrounds
+#Produces all normal WGCNA plots, as well as module repservation comparison across other backgrounds
 
 # single-cell analysis package
 library(Seurat)
@@ -16,14 +17,16 @@ library(hdWGCNA)
 
 #general help
 library(fs)
+
+
 Target_name<-"UCC_Integrated"
 
 #Provide attempt number. This is to keep straight what module results are tied to which metacell construction and hdWGCNA parameter
-Attempt_Number<-"4"
+Attempt_Number<-"1"
 
 
 datain<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Seurat_Analysis")
-dataout<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Isolate_WGCNA/","Attempt_",Attempt_Number)
+dataout<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/PIC_Only_WGCNA/","Attempt_",Attempt_Number)
 
 #make sure the data_out folder is still there
 dir_create(dataout)
@@ -38,15 +41,16 @@ theme_set(theme_cowplot())
 
 # set random seed, k nearest neighbors parameter and network type for reproducibility
 set.seed(12345)
-k.parameter<-60
+k.parameter<-45
 max_shared<-15
 net.type<-"signed"
-merge_height<-0.20
+merge_height<-0.15
 deep_split<-3
 mod_size<-60
 
 parameter_list<-c(k.parameter,max_shared,net.type,Target_name,Attempt_Number,merge_height,deep_split,mod_size)
 saveRDS(parameter_list,paste0(dataout,"/Parameter_list.rds"))
+
 
 # optionally enable multithreading
 enableWGCNAThreads(nThreads = 4)
@@ -55,6 +59,10 @@ enableWGCNAThreads(nThreads = 4)
 ###Create wild type seurat object
 wt_seurat_obj<-subset(seurat_obj, subset= Background=="C")
 
+##Create a PIC only wild type seurat object
+wt_seurat_obj<-subset(wt_seurat_obj, subset= Treatment=="P")
+
+
 #Set up subsetted object for WGCNA
 wt_seurat_obj <- SetupForWGCNA(
   wt_seurat_obj,
@@ -62,6 +70,7 @@ wt_seurat_obj <- SetupForWGCNA(
   fraction = 0.05, # fraction of cells that a gene needs to be expressed in order to be included
   wgcna_name = "WT_isolate" # the name of the hdWGCNA experiment
 )
+
 
 #Creating metacells using the samples as the biosamples
 #Would it be better to construct them out of the same background. so that LPS, PIC ad CTRL cells can comingle into the same emtacell group? In case some cells in the treated samples remain in a homoeostatic state
@@ -77,70 +86,6 @@ wt_seurat_obj <- MetacellsByGroups(
 
 # normalize metacell expression matrix:
 wt_seurat_obj <- NormalizeMetacells(wt_seurat_obj)
-
-
-frac <- prop.table(table(
-  wt_seurat_obj$Treatment[cells_in_metacell]
-))
-
-mc<-GetMetacellObject(wt_seurat_obj)
-
-###UMAP OF METACELLS ONLY####
-
-dim(mc)
-head(mc@meta.data)
-colnames(mc@meta.data)
-mc <- GetMetacellObject(wt_seurat_obj)
-mc <- FindVariableFeatures(mc)
-mc <- ScaleData(mc)
-mc <- RunPCA(mc)
-mc <- RunUMAP(mc, dims = 1:20)
-
-cell_meta <- wt_seurat_obj@meta.data
-
-frac_df <- lapply(seq_len(nrow(mc)), function(i){
-  
-  cells <- strsplit(mc$cells_merged[i], ",")[[1]]
-  
-  tab <- prop.table(table(cell_meta[cells, "Treatment"]))
-  
-  data.frame(
-    metacell = rownames(mc@meta.data)[i],
-    Control = ifelse("C" %in% names(tab), tab["C"], 0),
-    LPS     = ifelse("L" %in% names(tab), tab["L"], 0),
-    PIC     = ifelse("P" %in% names(tab), tab["P"], 0)
-  )
-})
-
-frac_df <- bind_rows(frac_df)
-
-frac_df<-frac_df[!is.na(frac_df$metacell),]
-
-umap <- Embeddings(mc, "umap") |>
-  as.data.frame() |>
-  tibble::rownames_to_column("metacell")
-
-plot_df <- left_join(umap, frac_df, by = "metacell")
-
-ggplot(plot_df) +
-  geom_scatterpie(
-    aes(x = umap_2, y = umap_1),
-    cols = c("Control", "LPS", "PIC"),
-    pie_scale = 1.5
-  ) +
-  xlab("umap_1")+
-  ylab("umap_2")+
-  labs(title=paste0(Target_name,"_",Attempt_Number,":WT Metacell UMAP"))+
-  coord_equal() +
-  theme_classic()
-
-ggsave(paste0(dataout,"/Figures/MetacellUmap.png"))
-
-
-DimPlot(wt_seurat_obj,group.by="Treatment")+
-  labs(title = paste0(Target_name,"_",Attempt_Number,":WT UMAP"))
-
-ggsave(paste0(dataout,"/Figures/WTcellUmap.png"))
 
 
 
@@ -178,29 +123,43 @@ wt_seurat_obj <- ConstructNetwork(
   mergeCutHeight = merge_height,
   overwrite_tom=TRUE,
   store_tom_in_seurat=TRUE
-  
-  
 )
-PlotDendrogram(wt_seurat_obj, main='WT isolate hdWGCNA Dendrogram')
+PlotDendrogram(wt_seurat_obj, main='WT PIC hdWGCNA Dendrogram')
+
+#compute all MEs in the full single-cell dataset
+wt_seurat_obj <- ModuleEigengenes(
+  wt_seurat_obj
+)
+
+# compute eigengene-based connectivity (kME):
+wt_seurat_obj <- ModuleConnectivity(wt_seurat_obj)
 
 
-p1 <- DimPlot(wt_seurat_obj, group.by='Treatment') +
-  umap_theme() +
-  ggtitle('WT  Isolate') 
-  
+p <- PlotKMEs(wt_seurat_obj, ncol=5)
 
-p2 <- DimPlot(seurat_obj, group.by='Treatment') +
+p
+
+#subsetting only the PIC treated samples acrosss all backgrounds
+p_seurat_obj<-subset(seurat_obj, subset= Treatment=="P")
+
+
+p1 <- DimPlot(seurat_obj, group.by='Treatment') +
   umap_theme() +
   ggtitle('Full data') 
-  
+
+
+p2 <- DimPlot(p_seurat_obj, group.by='Background') +
+  umap_theme() +
+  ggtitle('PIC only') 
+
 
 p1 | p2
 
 
 
 # Project modules from query to reference dataset
-seurat_obj <- ProjectModules(
-  seurat_obj = seurat_obj,
+p_seurat_obj <- ProjectModules(
+  seurat_obj = p_seurat_obj,
   seurat_ref = wt_seurat_obj,
   # vars.to.regress = c(), # optionally regress covariates when running ScaleData
   #group.by.vars = "Sample", # column in seurat_query to run harmony on. We already ran harmony on our dataset
@@ -211,77 +170,49 @@ seurat_obj <- ProjectModules(
 
 #plot all module MEs across all cells onto the UMAP
 plot_list <- ModuleFeaturePlot(
-  seurat_obj,
+  p_seurat_obj,
   features='MEs', # plot the MEs
   order=TRUE # order so the points with highest MEs are on top
 )
 
-ME<-GetMEs(seurat_obj)
 # stitch together with patchwork
 wrap_plots(plot_list, ncol=6)
 ggsave(paste0(dataout,"/Figures/ModuleUMAP.png"),width=10,height=8)
 
-##correlelogram to check module correlation
-ModuleCorrelogram(seurat_obj,features="MEs")
-ggsave(paste0(dataout,"/Figures/Correlelogram.png"))
 
+##correlelogram to check module correlation
+ModuleCorrelogram(p_seurat_obj,features="MEs")
 
 
 
 ##Correlating modules to samples using a dot plot
 #getting the MEs
-MEs <- GetMEs(seurat_obj, harmonized=FALSE)
-modules <- GetModules(seurat_obj)
+MEs <- GetMEs(p_seurat_obj, harmonized=FALSE)
+modules <- GetModules(p_seurat_obj)
 mods <- levels(modules$module); mods <- mods[mods != 'grey']
 
 # add MEs to Seurat meta-data:
-seurat_obj@meta.data <- cbind(seurat_obj@meta.data, MEs)
+p_seurat_obj@meta.data <- cbind(p_seurat_obj@meta.data, MEs)
+
+z<-DotPlot(subset(x=p_seurat_obj,subset=Treatment=="P"), features=mods, group.by = 'Background')
+z <- z +
+  RotatedAxis() +
+  scale_color_gradient2(high='red', mid='grey95', low='blue') +
+  ggtitle(paste0("WT module correlation in PIC Treatment"))
+ggsave(paste0(dataout,"/Figures/Background_Dotplot.png"),width = 10, height=5)
 
 
 
-#Make a dot plot correlating Module Eigengenes against all treatments across a single background
-for (i in unique(seurat_obj$Background)){
-  z<-DotPlot(subset(x=seurat_obj,subset=Background==i), features=mods, group.by = 'Treatment')
-  z <- z +
-    RotatedAxis() +
-    scale_color_gradient2(high='red', mid='grey95', low='blue') +
-    ggtitle(paste0("WT module correlation in ", i, " background"))
-  ggsave(paste0(dataout,"/Figures/Background_",i,"Dotplot.png"),width=10,height=4)
-  
-}
 
-#Make a dot plot correlating Module Eigengenes against all backgrounds across a single treatment
-for (i in unique(seurat_obj$Treatment)){
-  z<-DotPlot(subset(x=seurat_obj,subset=Treatment==i), features=mods, group.by = 'Background')
-  z <- z +
-    RotatedAxis() +
-    scale_color_gradient2(high='red', mid='grey95', low='blue') +
-    ggtitle(paste0("WT module correlation in ", i, " background"))
-  ggsave(paste0(dataout,"/Figures/Treatment_",i,"Dotplot.png"),width = 10, height=5)
-  
-}
 
-#How to 
-#z$data <- z$data %>%
-#  group_by(features.plot) %>%
-#  mutate(
-#    avg.exp.scaled =
-#      avg.exp.scaled -
-#      avg.exp.scaled[id == "C"]
-#  ) %>%
-#  ungroup()
 
-#z
-
-##############GO TERMS##################
-#reading in the WGCNAed seurat objects. botht the reference and the query
 
 #######RUNNING GO on the modules and on the genes with kme above 0.5
 library(clusterProfiler)
 library(AnnotationDbi)
 library(org.Hs.eg.db)
 
-#get modules from wild type isolate reference seuarat object
+#get modules from wild type isolate reference seurat object
 modules<-GetModules(wt_seurat_obj)
 mods <- levels(modules$module); mods <- mods[mods != 'grey']
 
@@ -374,30 +305,188 @@ capture.output(noGO,file = paste0(dataout,"/Figures/GO/",ontol,"/nonSigModules.t
 
 
 
-##############HUB GENE DISCOVERY####
+#saving out the fully anlayzed wt_seruat object _in this case the PIC_WT_
+saveRDS(wt_seurat_obj,paste0(dataout,"/",Target_name,"WGCNA_final_PIC_WT.rds"))
+
+#saving the WGCNA projection onto ahe all PIC subset
+saveRDS(p_seurat_obj,paste0(dataout,"/",Target_name,"WGCNA_final_proejected_allPIC.rds"))
+
+#####Module preservation across backgrounds####
+
+#Adapted Complete WGCNA function to check module preservation across all backgrounds
+#will output the complete module preservation df pres as an rds for each treatment
+
+dir_create(paste0(dataout,"/Module_preservation"))
 
 
-# compute eigengene-based connectivity (kME):
-seurat_obj <- ModuleConnectivity(
-  seurat_obj,
-  group.by = 'Background', group_name = 'C'
+## WT to BULK MODULE PRESERVATION
+# set expression matrix for reference dataset
+wt_expr <- GetDatExpr(wt_seurat_obj)
+
+
+
+# a loop that iterates over all teh background in the suerat object and cehcks for module preservation.
+#it will save all teh mp objects under the Module preservation directory, to be compared later
+for (i in unique(p_seurat_obj$Background)){
+  
+  #Set expression matrix for P dataset one background at a time
+  # Subset to the cells you want to use as the query
+  query <- subset(
+    p_seurat_obj,
+    subset = Background == i
+  )
+  
+  
+  
+  #Set up subsetted object for WGCNA
+  query <- SetupForWGCNA(
+    query,
+    gene_select = "fraction", # the gene selection approach
+    fraction = 0.05, # fraction of cells that a gene needs to be expressed in order to be included
+    wgcna_name = "projected" # the name of the hdWGCNA experiment
+  )
+  
+  
+  #Creating metacells for the query dataset as well to compare metcells vs metacells
+  query <- MetacellsByGroups(
+    seurat_obj = query,
+    group.by = c("Background"), # specify the columns in seurat_obj@meta.data to group by
+    reduction = 'pca', # select the dimensionality reduction to perform KNN on
+    k = k.parameter, # nearest-neighbors parameter
+    max_shared = max_shared, # maximum number of shared cells between two metacells
+    ident.group = 'Background' # set the Idents of the metacell seurat object
+  )
+  
+  
+  # normalize metacell expression matrix:
+  query <- NormalizeMetacells(query)
+  
+  
+  
+  query <- SetDatExpr(
+    query,
+    assay = "RNA",
+    slot = "data",
+    wgcna_name = "projected"
+  )
+  
+  back_expr<-GetDatExpr(query)
+  
+  # set up the modules
+  modules <- GetModules(wt_seurat_obj)
+  
+  ref_modules <- list(ref = modules$module)
+  
+  # set up multiExpr:
+  setLabels <- c("ref", "query")
+  multiExpr <- list(
+    ref = list(data=wt_expr),
+    query = list(data=back_expr)
+  )
+  
+  
+  
+  #Calculate module preservation from PIC WT sc data onto other background PIC
+  mp <- WGCNA::modulePreservation(
+    multiExpr,
+    ref_modules,
+    referenceNetworks = 1,
+    nPermutations = 150 # set this to whatever number is suitable 
+  )
+  
+  saveRDS(mp,paste0(dataout,"/Module_preservation/",i,"mod_pres.rds"))
+  
+}
+  
+#Pulling al the mp files and summarizing the results in a single graph
+pres_summ<-list()
+median_summ<-list()
+cor_summ<-list()
+
+for (i in unique(p_seurat_obj$Background)){
+  df<-readRDS(paste0(dataout,"/Module_preservation/",i,"mod_pres.rds"))
+  pres <- df$preservation$Z[[1]][[2]]
+  #figure out what to do with median rank. maybe
+  pres$MedianRank<-df$quality$observed$ref.ref$inColumnsAlsoPresentIn.query$medianRank.qual
+  pres_summ[[i]]<-pres$Zsummary.pres
+  median_summ[[i]]<-pres$MedianRank
+  cor_summ[[i]]<-df$preservation$observed$ref.ref$inColumnsAlsoPresentIn.query$cor.cor
+}
+
+pres_summ<-as.data.frame(pres_summ)
+rownames(pres_summ)<-rownames(pres)
+colnames(pres_summ)<-gsub("X","",colnames(pres_summ))
+
+plot_df <- pres_summ %>%
+  tibble::rownames_to_column("Module") %>%
+  pivot_longer(
+    cols = -Module,
+    names_to = "Background",
+    values_to = "Zsummary"
+  )
+
+
+plot_df$Preservation <- cut(
+  plot_df$Zsummary,
+  breaks = c(-Inf, 2, 10, Inf),
+  labels = c("Not preserved", "Moderately", "Strongly")
 )
 
+ggplot(plot_df,
+       aes(x = Module,
+           y = Zsummary,
+           color = Background)) +
+  geom_point(
+    position = position_dodge(width = 0.5),
+    size = 3
+  ) +
+  geom_hline(yintercept = c(2, 10),
+             linetype = "dashed",
+             color = c("orange", "darkgreen")) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  labs(
+    x = "Module",
+    y = "Zsummary"
+  )
 
-p <- PlotKMEs(seurat_obj, ncol=5)
-
-p
-
-hub_df <- GetHubGenes(seurat_obj, n_hubs = 10)
-
-head(hub_df)
 
 
-#Saving the final versions of WGCNA analysis. Both the wt_ object containing the metacells and the full dataset.
-saveRDS(seurat_obj,paste0(dataout,"/",Target_name,"WGCNA_final.rds"))
+#correlation summary
+cor_summ<-as.data.frame(cor_summ)
+rownames(cor_summ)<-rownames(pres)
+colnames(cor_summ)<-gsub("X","",colnames(cor_summ))
 
-saveRDS(wt_seurat_obj,paste0(dataout,"/",Target_name,"WGCNA_final_WTonly.rds"))
 
 
+
+plot_df <- cor_summ %>%
+  tibble::rownames_to_column("Module") %>%
+  pivot_longer(
+    cols = -Module,
+    names_to = "Background",
+    values_to = "Cor.cor"
+  )
+
+
+
+ggplot(plot_df,
+       aes(x = Module,
+           y = Cor.cor,
+           color = Background)) +
+  geom_point(
+    position = position_dodge(width = 0.5),
+    size = 3
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  labs(
+    x = "Module",
+    y = "cor.cor score"
+  )
 
 

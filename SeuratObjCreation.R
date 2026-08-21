@@ -38,9 +38,17 @@ for (i in filenames){
   obj_list<-append(obj_list,seurat_obj)
 }
 
+
+
 #Filtering to cull any cells with a mt percent above 5% and features <200 >15000
 #also creates plots of percent mt vs nCount and nFeature vs nCount. both filtered obj
 #and plot are saved into an directory named filtered
+#if coming it at mid point
+obj_list<-list()
+raw_seur_path<-"/data/scRNA/HMC3_ZKV/DRAGEN/Realign_again/Output_ds.d6e2c4c6825d46fda615ccfc230f0d78/Seurat_Out/Raw_Obj"
+for(h in list.files(raw_seur_path)){
+  obj_list<-append(obj_list,readRDS(paste0(raw_seur_path,"/",h)))
+}
 
 filt_obj_list<-list()
 for (i in seq_along(obj_list)){
@@ -53,16 +61,75 @@ for (i in seq_along(obj_list)){
   seur[["Background"]]<-str_sub(gsub("ZSC","",filenames[i]),1,-2)
   seur[["Sample"]]<-filenames[i]
   ###save plots to a png
-  plot1 <- FeatureScatter(seur, feature1 = "nCount_RNA", feature2 = "percent.mt")
-  plot2 <- FeatureScatter(seur, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+  plot1 <- FeatureScatter(seur, feature1 = "nCount_RNA", feature2 = "percent.mt")+
+    geom_hline(yintercept = 5, color = "black", linetype = "dashed", linewidth = 1) +
+    labs(title=filenames[i])
+  plot2 <- FeatureScatter(seur, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")+
+    geom_hline(yintercept = 200, color = "black", linetype = "dashed", linewidth = 1) +
+    geom_hline(yintercept = 15000, color = "black", linetype = "dashed", linewidth = 1) +
+    labs(title=filenames[i])
+  
   plot1 + plot2
-  ggsave(paste0(datapath,"/Seurat_Out/Filtered/plot",filenames[i],".png"))
-  #
+  ggsave(paste0(datapath,"/Seurat_Out/Filtered/plot",filenames[i],".png"),width=10)
+  
   seur <- subset(seur, subset = nFeature_RNA > 200 & nFeature_RNA < 15000 & percent.mt < 5)
   filt_obj_list<-append(filt_obj_list,seur)
   saveRDS(seur,paste0(datapath,"/Seurat_Out/Filtered/",filenames[i],".rds"))
   
 }
+
+###########POST FILTERED CUMULATIVE CELL COUNT BY NFEATURE AND NRNA####
+for (i in seq_along(filenames)){
+  seur<-filt_obj_list[[i]]
+  count.df<-data.frame(RNA_Count=seur$nCount_RNA,Feature_Count=seur$nFeature_RNA)
+  
+  rnacount<-count.df %>%  dplyr::count(RNA_Count) %>%arrange(-RNA_Count)%>% mutate(cumsum=cumsum(n))
+  
+  ggplot(data=rnacount,aes(x=RNA_Count,y=cumsum))+
+    geom_line(linewidth = 1)+
+    labs(title=paste0("Reverse Cumulative sum of cells arranged by RNA Count, in", filenames[i]),
+         x="Number of RNA molecules detected in cell",
+         y="Reverse cumulative sum of cells")+
+    theme_minimal()
+  
+  ggsave(paste0(datapath,"/Seurat_Out/Filtered/CumSum/nRNA",filenames[i],".png"))
+  
+  featcount<-count.df %>%  dplyr::count(Feature_Count) %>%arrange(-Feature_Count)%>% mutate(cumsum=cumsum(n))
+  
+  ggplot(data=featcount,aes(x=Feature_Count,y=cumsum))+
+    geom_line(linewidth = 1)+
+    labs(title=paste0("Reverse Cumulative sum of cells arranged by Feature Count, in", filenames[i]),
+         x="Number of RNA molecules detected in cell",
+         y="Reverse cumulative sum of cells")+
+    theme_minimal()
+  ggsave(paste0(datapath,"/Seurat_Out/Filtered/CumSum/nFeature",filenames[i],".png"))
+  
+}
+
+###########POST FILTERED FEATURE SCATTER MTRNA ND NFEATURE/NRNA####
+combined_obj <- merge(
+  x = filt_obj_list[[1]], 
+  y = filt_obj_list[2:24], 
+  add.cell.ids = filenames, 
+  project = "CombinedProject"
+)
+
+# Create the feature scatter plot colored by original identity/orig.ident
+FeatureScatter(
+  combined_obj, 
+  feature1 = "nCount_RNA", 
+  feature2 = "nFeature_RNA", 
+  group.by = "Sample"
+)  
+
+FeatureScatter(
+  combined_obj, 
+  feature1 = "nCount_RNA", 
+  feature2 = "percent.mt", 
+  group.by = "Sample"
+)  +
+  geom_hline(yintercept = 5, color = "black", linetype = "dashed", linewidth = 1) 
+
 
 ###IF COMING IN AT THE MIDPOINT
 data<-"/data/scRNA/HMC3_ZKV/DRAGEN/Realign_again/Output_ds.d6e2c4c6825d46fda615ccfc230f0d78/Seurat_Out/Filtered"
@@ -71,7 +138,7 @@ for (i in list.files(path="/data/scRNA/HMC3_ZKV/DRAGEN/Realign_again/Output_ds.d
   filt_obj_list<-append(filt_obj_list,readRDS(paste0(data,"/",i)))
 }
 
-###########Make matrix for expression of TRANSCDS my trangenic gene by sample
+###########Make matrix for expression of TRANSCDS my trangenic gene by sample####
 transframe<-data.frame(row_id=1:4)
 rownames(transframe)<-c("counts","cells","GAPDHcount","Norm")
 for (i in seq_along(filt_obj_list)){
@@ -85,7 +152,7 @@ for (i in seq_along(filt_obj_list)){
   transframe[[samp]]<-c(counts,cells,hkg,normTRANS)
 }
 
-#####UNIFORM CELL COUNT and UNIFORM READ NUMBER merged Seurat objects
+#####UNIFORM CELL COUNT and UNIFORM READ NUMBER merged Seurat objects####
 ####UCC and URN
 ##subsetting each filtered seurat subject to teh top 512 cells by feature count
 UCClist<-list()

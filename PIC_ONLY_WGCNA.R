@@ -242,6 +242,8 @@ univ.combined<-append(universe.symb$ENTREZID, universe.ensembl$ENTREZID)
 #initialize a list to populate with modules with no significant GO terms
 noGO<-list()
 
+topGO<-list()
+
 ontol<-"BP" #This can be changed depending on what ontology database you want to use
 dir_create(paste0(dataout, "/Figures/GO/",ontol),recurse=TRUE)
 
@@ -299,7 +301,7 @@ for (i in mods){
   dotplot(ego, showCategory = 10)+
     ggtitle(paste0(ontol,"GO enrichment of ", currcolor, " module"))
   ggsave(paste0(dataout,"/Figures/GO/",ontol,"/",currcolor,"_GO.png"),height=1800,width=2200,units= "px", dpi= 300)
-  
+  topGO<-append(topGO,paste(head(ego@result$Description,n=5),collapse=","))
 }
 capture.output(noGO,file = paste0(dataout,"/Figures/GO/",ontol,"/nonSigModules.txt"))
 
@@ -489,4 +491,12 @@ ggplot(plot_df,
     y = "cor.cor score"
   )
 
+
+#Module Summary
+
+modsumm<-data.frame(
+  modules=mods,
+  modsize=sapply(mods, function(i) sum(modules$module == i))
+    
+)
 

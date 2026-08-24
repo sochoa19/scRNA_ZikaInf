@@ -15,7 +15,7 @@ library(fs)
 
 #Populate Seur_target with whichever Seurat object you want to run DE and UMAP viz on
 #it will be used downstream for all the analyses, it will also pull the Name of the object to append to plot titles
-Target_name<-"URN_int"
+Target_name<-"URN"
 datain<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/")
 dataout<-paste0(datain,Target_name,"/Seurat_Analysis/")
 
@@ -25,6 +25,15 @@ dir_create(paste0(dataout,"Figures/VolcanoPlots"),recurse=TRUE)
 
 Seur_target<-readRDS(paste0(datain,Target_name,"_seur.rds"))
 
+
+########DESEQ for Un-normalized Un integrated Datasets (OPTIONAL)######
+Seur_target<- NormalizeData(Seur_target)
+Seur_target <- FindVariableFeatures(Seur_target)
+Seur_target <- ScaleData(Seur_target)
+Seur_target <- RunPCA(Seur_target)
+
+
+
 ###DIFFERENTIAL EXPRESSION ####
 #########Make Volcano plots for all Ctrl vs LPs or Ctrl vs PIC inside of each genetic treatment
 #########Also finds the shared significant genes across all 
@@ -32,9 +41,9 @@ de.L.list<-list()
 de.P.list<-list()
 sig.L.names<-list()
 sig.P.names<-list()
-#Itereate DEVOlcano function over each abckground of the dataset. 
+#Iterate DE Volcano function over each background of the dataset. 
 #This way you're getting PIC and LPS DE analysis inside each background
-for (i in unique(Seur_target$Background)){
+for (i in c("12")){
   Cname=paste0("ZSC",i,"C")
   Lname=paste0("ZSC",i,"L")
   Pname=paste0("ZSC",i,"P")
@@ -71,6 +80,8 @@ L.down.gene_sets <- map(de.L.list, ~{
 })
 L.down.WT.genes<-L.down.gene_sets[["C"]]
 
+
+
 P.up.gene_sets <- map(de.P.list, ~{
   .x %>%
     filter(expression != "Up") %>%
@@ -87,7 +98,49 @@ P.down.gene_sets <- map(de.P.list, ~{
 })
 P.down.WT.genes<-P.down.gene_sets[["C"]]
 
-#Calculate the jaccard index between the control DE significant genes
+#Turn each gene list into a .txt file so that It can be input into tfTargets
+for (i in names(P.up.gene_sets)){
+  writeLines(unlist(P.up.gene_sets[i]),paste0(dataout,"Gene_Lists/",i,"_up.txt"))
+  
+}
+
+for (i in names(P.down.gene_sets)){
+  writeLines(unlist(P.down.gene_sets[i]),paste0(dataout,"Gene_Lists/",i,"_down.txt"))
+  
+}
+
+#####Summarizing TF target result CSVs#######
+#cycle through all csv files and combine them into a single large dataframe
+all_tfs<-data.frame()
+for (i in list.files(paste0(dataout,"Gene_Lists/"),pattern="*.csv")){
+  tf_csv<-as.data.frame(read_csv(paste0(dataout,"Gene_Lists/",i),show_col_types = FALSE))
+  
+  #changing colnames to make it easier to process in R. no spaces no hyphens
+  colnames(tf_csv)<-gsub("-| ","_",colnames(tf_csv))
+  #Removing all samples with a pvalue > 0.05
+  tf_csv<-subset(tf_csv,P_Value<0.05)
+  
+  #add the origin adn riection as extra columns
+  tf_csv$Origin<-gsub("_tf_up.csv|_tf_down.csv","",i)
+  if (grepl("up",i)){
+    tf_csv$Direction<-"Upregulated"
+  } else if  (grepl("down",i)){
+    tf_csv$Direction<-"Downregulated"
+  }
+  
+  all_tfs<-rbind(all_tfs,tf_csv)
+}
+
+# get top pvalue entries per origin and direction
+top_tfs<-all_tfs[,c(2,5,9,10,11,12)] %>% 
+  arrange(P_Value) %>%
+  group_by(Origin,Direction) %>% 
+  slice_sample(n=10)
+
+saveRDS(top_tfs,paste0(dataout,"Gene_Lists/Top_TF_Grouped.rds"))  
+saveRDS(all_tfs,paste0(dataout,"Gene_Lists/All_TF.rds"))
+
+#Calculate the jaccard index between the control DE significant genes####
 #and the ones found in other backgrounds 
 setname<-P.down.gene_sets
 compname<-P.down.WT.genes
@@ -148,6 +201,98 @@ ggsave(paste0(dataout,"Figures/Dimensional_Reduction/SampleUmap.png"))
 
 saveRDS(Seur_target,paste0(dataout,Target_name,"_final.rds"))
 
+
+
+
+
+###COMPARING ALL PIC SAMPLES AGAINST ZSCCP####
+
+#########Make Volcano plots for all Ctrl vs LPs or Ctrl vs PIC inside of each genetic treatment
+#########Also finds the shared significant genes across all 
+
+#new data out
+dataout<-paste0(dataout,"PIC_ONLY/")
+de.P.list<-list()
+sig.P.names<-list()
+#Iterate DE Volcano function over each background of the dataset. 
+for (i in c("12","J")){
+  Cname=paste0("ZSCCP")
+  Pname=paste0("ZSC",i,"P")
+  de.P<-DEVolcano(Seur_target,Pname,Cname,"Sample")
+  sig.P.names<-append(sig.P.names,de.P[de.P$expression!="NS",7])
+  de.P.list[[i]]<-de.P
+}
+#makes a unqiue lsit of all significant genes across all backgrounds
+all.sig.P<-unique(sig.P.names)
+#saves a list fo dataframes, each one with the DE results for each treatment vs its isogenic ctrl
+saveRDS(de.P.list,paste0(dataout,"vsP_DE.rds"))
+
+#####Make a list of dataframe of only the upregulated or downregulated genes across samples
+##and separate a list of genes 
+
+
+P.up.gene_sets <- map(de.P.list, ~{
+  .x %>%
+    filter(expression != "Up") %>%
+    pull(gene) %>%
+    unique()
+})
+P.up.WT.genes<-P.up.gene_sets[["C"]]
+
+P.down.gene_sets <- map(de.P.list, ~{
+  .x %>%
+    filter(expression != "Down") %>%
+    pull(gene) %>%
+    unique()
+})
+P.down.WT.genes<-P.down.gene_sets[["C"]]
+
+#Turn each gene list into a .txt file so that It can be input into tfTargets
+for (i in names(P.up.gene_sets)){
+  writeLines(unlist(P.up.gene_sets[i]),paste0(dataout,"Gene_Lists/",i,"_up.txt"))
+  
+}
+
+for (i in names(P.down.gene_sets)){
+  writeLines(unlist(P.down.gene_sets[i]),paste0(dataout,"Gene_Lists/",i,"_down.txt"))
+  
+}
+
+#txt_path<-paste0(dataout,"Gene_Lists/")
+#system2(command = "python",
+ #       args=paste0("find_TF_regulators.py", paste0("--input=",txt_path,"1","_up.txt")  ,paste0("--output=",txt_path,"1","_tf_up.csv")),
+  #      stdout = TRUE)
+
+#####Summarizing TF target result CSVs
+#cycle through all csv files and combine them into a single large dataframe
+all_tfs<-data.frame()
+for (i in list.files(paste0(dataout,"Gene_Lists/"),pattern="*.csv")){
+  tf_csv<-as.data.frame(read_csv(paste0(dataout,"Gene_Lists/",i),show_col_types = FALSE))
+  
+  #changing colnames to make it easier to process in R. no spaces no hyphens
+  colnames(tf_csv)<-gsub("-| ","_",colnames(tf_csv))
+  #Removing all samples with a pvalue > 0.05
+  tf_csv<-subset(tf_csv,P_Value<0.05)
+  
+  #add the origin adn riection as extra columns
+  tf_csv$Origin<-gsub("_tf_up.csv|_tf_down.csv","",i)
+  if (grepl("up",i)){
+    tf_csv$Direction<-"Upregulated"
+  } else if  (grepl("down",i)){
+    tf_csv$Direction<-"Downregulated"
+  }
+  
+  all_tfs<-rbind(all_tfs,tf_csv)
+}
+
+# get top pvalue entries per origin and direction
+top_tfs<-all_tfs[,c(2,5,9,10,11,12)] %>% 
+  arrange(P_Value) %>%
+  group_by(Origin,Direction) %>% 
+  slice_sample(n=10)
+
+saveRDS(top_tfs,paste0(dataout,"Gene_Lists/Top_TF_Grouped.rds"))  
+saveRDS(all_tfs,paste0(dataout,"Gene_Lists/All_TF.rds"))
 
 ##FUNCTIONS LIVE BELOW!!!####
 

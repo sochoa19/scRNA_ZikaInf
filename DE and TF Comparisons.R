@@ -120,15 +120,159 @@ for (i in list.files(paste0(dataout,"Venn_Categories/"),pattern="*.csv")){
   tf_csv$Origin<-sub("_.*","",i)
   tf_csv$Category<-str_sub(i,-8,-8)
   
+  #appenda ll teh csvs together
   all_tfs<-rbind(all_tfs,tf_csv)
 }
 
+#adding columns that capture the predominant direction of all 3 DF comparisons in a captured TF
+#to determine hwether the TF is dowregulating or upregulating the gene in question
+library(purrr)
+library(tidyr)
 
-# get top pvalue entries per origin and direction
-top_tfs<-all_tfs[,c(2,5,9,10,11,12)] %>% 
-  arrange(P_Value) %>%
+#Making each TF target gene its own row
+tf_long <- all_tfs %>%
+  separate_rows(Overlapping, sep = "[ ;]") %>%
+  rename(gene = Overlapping)
+
+#Cmbine all vendfs into a single dataframe and add the venn name as the origin
+de_combined <- bind_rows(Venn_list, .id = "Origin")
+
+#Combine tf_long and de_combined so that teh DE data is appended to each tf gene pair
+tf_long <- tf_long %>%
+  left_join(
+    de_combined,
+    by = c("Origin", "gene")
+  )
+
+tf_result <- tf_long %>%
+  count(TF, Origin, Back_Treat, Category, name = "n") %>%
+  group_by(TF, Origin,Category) %>%
+  mutate(
+    total = sum(n),
+    fraction = n / total
+  ) %>%
+  summarise(
+    Direction = if (any(fraction >= 0.666)) {
+      Back_Treat[which(fraction >= 0.666)[1]]
+    } else {
+      "conflicted"
+    },
+    total = first(total),
+    max_fraction = max(fraction),
+    .groups = "drop"
+  )
+
+classify_66 <- function(data, class_col) {
+  
+  data %>%
+    group_by(TF, Origin, Category, .data[[class_col]]) %>%
+    summarise(n = n(), .groups = "drop") %>%
+    group_by(TF, Origin, Category) %>%
+    mutate(
+      total = sum(n),
+      fraction = n / total
+    ) %>%
+    summarise(
+      "{class_col}_result" := if (any(fraction >= 0.666)) {
+        .data[[class_col]][which(fraction >= 0.666)[1]]
+      } else {
+        "conflicted"
+      },
+      .groups = "drop"
+    )
+}
+back_treat_result <- classify_66(tf_long, "Back_Treat")
+
+wt_treat_result <- classify_66(tf_long, "WT_Treat")
+
+wt_back_treat_result <- classify_66(tf_long, "WT_Back_Treat")
+tf_result <- all_tfs %>%
+  left_join(back_treat_result, by = c("TF", "Origin","Category")) %>%
+  left_join(wt_treat_result, by = c("TF", "Origin","Category")) %>%
+  left_join(wt_back_treat_result, by = c("TF", "Origin","Category"))  
+
+tf_result<- tf_result %>%
   group_by(Origin,Category) %>% 
-  slice_sample(n=10)
+  arrange(P_Value, .by_group = TRUE)
+
+# get top pvalue entries per origin and Category
+top_tfs<-tf_result[,-c(1,3,4,6,7,8)] %>% 
+  group_by(Origin,Category) %>% 
+  arrange(P_Value, .by_group = TRUE)  %>%
+  slice_head(n=15)
 
 saveRDS(top_tfs,paste0(dataout,"Venn_Categories/Top_TF_Grouped.rds"))  
-saveRDS(all_tfs,paste0(dataout,"Venn_Categories/All_TF.rds"))
+saveRDS(tf_result,paste0(dataout,"Venn_Categories/All_TF.rds"))
+
+
+#Pulling a subset of genes that are upregulated in WT_Control. These are our canonicla PIC response
+canon_active<-unique(IB_DE[["C"]][IB_DE[["C"]]$expression=="Up","gene"])
+canon_active<-canon_active[!is.na(canon_active)]
+canon_suppressed<-unique(IB_DE[["C"]][IB_DE[["C"]]$expression=="Down","gene"])
+canon_suppressed<-canon_suppressed[!is.na(canon_suppressed)]
+
+plot_data<-data.frame()
+for (i in names(AB_DE)){
+  test_up<-subset(AB_DE[[i]],gene %in% canon_active & expression=="Up" )
+  test_down<-subset(AB_DE[[i]],gene %in% canon_active & expression=="Down" )
+  test_ns<-subset(AB_DE[[i]],gene %in% canon_active & expression=="NS" )
+  test_not_found<-length(canon_active)-nrow(test_up)-nrow(test_down)-nrow(test_ns)
+  test_df<-data.frame(origin=c(i,i,i,i),
+                      gene_num=c(nrow(test_up),nrow(test_down),nrow(test_ns),test_not_found),
+                      Wt_Back=c("Up","Down","No Change","Not Found"))
+ plot_data<- rbind(plot_data,test_df)
+}
+
+plot_data<- plot_data %>%
+  mutate(
+    Wt_Back = factor(
+      Wt_Back,
+      levels = c("Up", "Down", "No Change", "Not Found")
+    )
+  )
+
+ggplot(plot_data, aes(x = factor(origin), y = gene_num, fill = Wt_Back)) +
+  geom_col() +
+  labs(
+    title=("Upregulated genes in WT vs WT-PIC"),
+    x = "Origin",
+    y = "Number of genes",
+    fill = "DE WT-PIC to ZSC-PIC"
+  ) +
+  theme_classic()
+
+###canonically supressed gnes in PIC
+
+plot_data<-data.frame()
+for (i in names(AB_DE)){
+  test_up<-subset(AB_DE[[i]],gene %in% canon_suppressed & expression=="Up" )
+  test_down<-subset(AB_DE[[i]],gene %in% canon_suppressed & expression=="Down" )
+  test_ns<-subset(AB_DE[[i]],gene %in% canon_suppressed & expression=="NS" )
+  test_not_found<-length(canon_suppressed)-nrow(test_up)-nrow(test_down)-nrow(test_ns)
+  test_df<-data.frame(origin=c(i,i,i,i),
+                      gene_num=c(nrow(test_up),nrow(test_down),nrow(test_ns),test_not_found),
+                      Wt_Back=c("Up","Down","No Change","Not Found"))
+  plot_data<- rbind(plot_data,test_df)
+}
+
+plot_data<- plot_data %>%
+  mutate(
+    Wt_Back = factor(
+      Wt_Back,
+      levels = c("Up", "Down", "No Change", "Not Found")
+    )
+  )
+
+ggplot(plot_data, aes(x = factor(origin), y = gene_num, fill = Wt_Back)) +
+  geom_col() +
+  labs(
+    title=("Downregulated genes in WT vs WT-PIC"),
+    x = "Origin",
+    y = "Number of genes",
+    fill = "DE WT-PIC to ZSC-PIC"
+  ) +
+  theme_classic()
+
+
+
+                        

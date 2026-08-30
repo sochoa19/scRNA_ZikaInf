@@ -5,6 +5,7 @@ library(ggplot2)
 library(ggrepel)
 library(tibble)
 library(Matrix)
+library(readr)
 library(stringr)
 library(future)
 library(ggvenn)
@@ -15,7 +16,7 @@ library(fs)
 
 #Populate Seur_target with whichever Seurat object you want to run DE and UMAP viz on
 #it will be used downstream for all the analyses, it will also pull the Name of the object to append to plot titles
-Target_name<-"URN"
+Target_name<-"new_UCC"
 datain<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/")
 dataout<-paste0(datain,Target_name,"/Seurat_Analysis/")
 
@@ -43,7 +44,7 @@ sig.L.names<-list()
 sig.P.names<-list()
 #Iterate DE Volcano function over each background of the dataset. 
 #This way you're getting PIC and LPS DE analysis inside each background
-for (i in c("12")){
+for (i in levels(factor(Seur_target$Background))){
   Cname=paste0("ZSC",i,"C")
   Lname=paste0("ZSC",i,"L")
   Pname=paste0("ZSC",i,"P")
@@ -98,7 +99,10 @@ P.down.gene_sets <- map(de.P.list, ~{
 })
 P.down.WT.genes<-P.down.gene_sets[["C"]]
 
+
 #Turn each gene list into a .txt file so that It can be input into tfTargets
+dir_create(paste0(dataout,"Gene_Lists/"))
+
 for (i in names(P.up.gene_sets)){
   writeLines(unlist(P.up.gene_sets[i]),paste0(dataout,"Gene_Lists/",i,"_up.txt"))
   
@@ -108,6 +112,26 @@ for (i in names(P.down.gene_sets)){
   writeLines(unlist(P.down.gene_sets[i]),paste0(dataout,"Gene_Lists/",i,"_down.txt"))
   
 }
+
+
+#RUNNING TF TARGETS ON ALL THE TXT files
+
+txt_path<-paste0(dataout,"Gene_Lists")
+
+old_wd<-getwd()
+
+setwd("/home/santi/TF_targets")
+
+for (i in list.files(txt_path,pattern="*.txt",full.names = TRUE)){
+  outpath<-gsub(".txt","_tf.csv",i)
+  system2(command = "/home/santi/.conda/envs/tf_targets/bin/python",
+          args=c("find_TF_regulators.py", paste0("--input=",i)  ,paste0("--output=",outpath)),
+          stdout = TRUE,
+          stderr = TRUE)
+}
+
+
+setwd(old_wd)
 
 #####Summarizing TF target result CSVs#######
 #cycle through all csv files and combine them into a single large dataframe
@@ -121,7 +145,7 @@ for (i in list.files(paste0(dataout,"Gene_Lists/"),pattern="*.csv")){
   tf_csv<-subset(tf_csv,P_Value<0.05)
   
   #add the origin adn riection as extra columns
-  tf_csv$Origin<-gsub("_tf_up.csv|_tf_down.csv","",i)
+  tf_csv$Origin<-gsub("_up_tf.csv|_down_tf.csv","",i)
   if (grepl("up",i)){
     tf_csv$Direction<-"Upregulated"
   } else if  (grepl("down",i)){
@@ -131,11 +155,13 @@ for (i in list.files(paste0(dataout,"Gene_Lists/"),pattern="*.csv")){
   all_tfs<-rbind(all_tfs,tf_csv)
 }
 
+all_tfs<-all_tfs %>% group_by(Origin,Direction) %>% arrange(P_Value,by_group=TRUE)
+
 # get top pvalue entries per origin and direction
 top_tfs<-all_tfs[,c(2,5,9,10,11,12)] %>% 
   arrange(P_Value) %>%
   group_by(Origin,Direction) %>% 
-  slice_sample(n=10)
+  slice_head(n=10)
 
 saveRDS(top_tfs,paste0(dataout,"Gene_Lists/Top_TF_Grouped.rds"))  
 saveRDS(all_tfs,paste0(dataout,"Gene_Lists/All_TF.rds"))
@@ -212,10 +238,11 @@ saveRDS(Seur_target,paste0(dataout,Target_name,"_final.rds"))
 
 #new data out
 dataout<-paste0(dataout,"PIC_ONLY/")
+dir_create(paste0(dataout,"Figures/VolcanoPlots"),recursive = TRUE)
 de.P.list<-list()
 sig.P.names<-list()
 #Iterate DE Volcano function over each background of the dataset. 
-for (i in c("12","J")){
+for (i in setdiff(levels(factor(Seur_target$Background)),"C")){
   Cname=paste0("ZSCCP")
   Pname=paste0("ZSC",i,"P")
   de.P<-DEVolcano(Seur_target,Pname,Cname,"Sample")
@@ -258,10 +285,23 @@ for (i in names(P.down.gene_sets)){
   
 }
 
-#txt_path<-paste0(dataout,"Gene_Lists/")
-#system2(command = "python",
- #       args=paste0("find_TF_regulators.py", paste0("--input=",txt_path,"1","_up.txt")  ,paste0("--output=",txt_path,"1","_tf_up.csv")),
-  #      stdout = TRUE)
+txt_path<-paste0(dataout,"Gene_Lists")
+
+old_wd<-getwd()
+
+setwd("/home/santi/TF_targets")
+
+for (i in list.files(txt_path,pattern="*.txt",full.names = TRUE)){
+  outpath<-gsub(".txt","_tf.csv",i)
+  system2(command = "/home/santi/.conda/envs/tf_targets/bin/python",
+          args=c("find_TF_regulators.py", paste0("--input=",i)  ,paste0("--output=",outpath)),
+          stdout = TRUE,
+          stderr = TRUE)
+}
+
+
+setwd(old_wd)
+
 
 #####Summarizing TF target result CSVs
 #cycle through all csv files and combine them into a single large dataframe
@@ -289,7 +329,7 @@ for (i in list.files(paste0(dataout,"Gene_Lists/"),pattern="*.csv")){
 top_tfs<-all_tfs[,c(2,5,9,10,11,12)] %>% 
   arrange(P_Value) %>%
   group_by(Origin,Direction) %>% 
-  slice_sample(n=10)
+  slice_head(n=15)
 
 saveRDS(top_tfs,paste0(dataout,"Gene_Lists/Top_TF_Grouped.rds"))  
 saveRDS(all_tfs,paste0(dataout,"Gene_Lists/All_TF.rds"))

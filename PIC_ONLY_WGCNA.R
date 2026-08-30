@@ -311,7 +311,7 @@ capture.output(noGO,file = paste0(dataout,"/Figures/GO/",ontol,"/nonSigModules.t
 saveRDS(wt_seurat_obj,paste0(dataout,"/",Target_name,"WGCNA_final_PIC_WT.rds"))
 
 #saving the WGCNA projection onto ahe all PIC subset
-saveRDS(p_seurat_obj,paste0(dataout,"/",Target_name,"WGCNA_final_proejected_allPIC.rds"))
+saveRDS(p_seurat_obj,paste0(dataout,"/",Target_name,"WGCNA_final_PIC_WT_projected_allPIC.rds"))
 
 #####Module preservation across backgrounds####
 
@@ -454,6 +454,7 @@ ggplot(plot_df,
     y = "Zsummary"
   )
 
+ggsave(paste0(dataout,"/Module_Preservation/ZSumm.png"))
 
 
 #correlation summary
@@ -491,7 +492,7 @@ ggplot(plot_df,
     y = "cor.cor score"
   )
 
-
+ggsave(paste0(dataout,"/Module_Preservation/CorrelationSumm.png"))
 #Module Summary
 
 modsumm<-data.frame(

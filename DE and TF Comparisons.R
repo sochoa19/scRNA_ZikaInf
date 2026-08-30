@@ -8,6 +8,7 @@ library(Matrix)
 library(stringr)
 library(future)
 library(ggvenn)
+library(tidyr)
 library(purrr)
 library(pheatmap)
 library(fs)
@@ -17,7 +18,7 @@ library(fs)
 #it will be used downstream for all the analyses, it will also pull the Name of the object to append to plot titles
 Target_name<-"URN"
 datain<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Seurat_Analysis/")
-dataout<-paste0(datain,"Comparison/")
+dataout<-paste0(datain,"Comparison/Venn_Categories/",recursive=TRUE)
 
 dir_create(dataout)
 dir_create(paste0(dataout,"Figures"),recurse=TRUE)
@@ -73,7 +74,6 @@ subset(Venn_list[["J"]],Classification=="G")$gene
 saveRDS(Venn_list,paste0(dataout,"All_Venn_List.rds"))
 
 #Making .txt lists of each background and category. To be used in Tf targets later
-dir_create(paste0(dataout,"Venn_Categories"))
 
 for (j in names(Venn_list)){
   for (i in levels(factor(VennDF$Classification))) {
@@ -94,7 +94,6 @@ for ( i in list.files(paste0(dataout,"Venn_Categories/"),pattern = "*.txt")){
           args=c("/home/santi/TF_targets/find_TF_regulators.py", paste0("--input=",fullpath,i)  ,paste0("--output=",fullpath,j)),
           stdout = TRUE,
           stderr = TRUE)
-  cat(result, sep = "\n")
 }
 
 setwd(old_dir)
@@ -126,8 +125,6 @@ for (i in list.files(paste0(dataout,"Venn_Categories/"),pattern="*.csv")){
 
 #adding columns that capture the predominant direction of all 3 DF comparisons in a captured TF
 #to determine hwether the TF is dowregulating or upregulating the gene in question
-library(purrr)
-library(tidyr)
 
 #Making each TF target gene its own row
 tf_long <- all_tfs %>%
@@ -143,25 +140,7 @@ tf_long <- tf_long %>%
     de_combined,
     by = c("Origin", "gene")
   )
-
-tf_result <- tf_long %>%
-  count(TF, Origin, Back_Treat, Category, name = "n") %>%
-  group_by(TF, Origin,Category) %>%
-  mutate(
-    total = sum(n),
-    fraction = n / total
-  ) %>%
-  summarise(
-    Direction = if (any(fraction >= 0.666)) {
-      Back_Treat[which(fraction >= 0.666)[1]]
-    } else {
-      "conflicted"
-    },
-    total = first(total),
-    max_fraction = max(fraction),
-    .groups = "drop"
-  )
-
+#
 classify_66 <- function(data, class_col) {
   
   data %>%
@@ -181,6 +160,7 @@ classify_66 <- function(data, class_col) {
       .groups = "drop"
     )
 }
+
 back_treat_result <- classify_66(tf_long, "Back_Treat")
 
 wt_treat_result <- classify_66(tf_long, "WT_Treat")
@@ -241,6 +221,7 @@ ggplot(plot_data, aes(x = factor(origin), y = gene_num, fill = Wt_Back)) +
   ) +
   theme_classic()
 
+ggsave(paste0(dataout,"Upregulated_Gene_Fates.png"))
 ###canonically supressed gnes in PIC
 
 plot_data<-data.frame()
@@ -273,6 +254,7 @@ ggplot(plot_data, aes(x = factor(origin), y = gene_num, fill = Wt_Back)) +
   ) +
   theme_classic()
 
+ggsave(paste0(dataout,"Downregulated_Gene_Fates.png"))
 
 
                         

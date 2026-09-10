@@ -5,9 +5,10 @@ library(fs)
 library(ggplot2)
 
 set.seed(1234)
-B <- 300
+#permutation size
+B <- 1000
 
-Target_name<-"new_UCC_int"
+Target_name<-"UCC_int"
 Attempt_number<-"Attempt_1"
 
 dataout<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Module_Covariance/")
@@ -144,8 +145,7 @@ module_covariance_test <- function(module_genes, expr, meta,
     module_mean <- mean(module_check, na.rm = TRUE)
     null_mean <- mean(Null_check, na.rm = TRUE)
     null_sd <- sd(Null_check, na.rm = TRUE)
-    module_p <- (1 + sum(Null_check >= observed_covariance, na.rm = TRUE)) /
-      (1 + sum(!is.na(Null_check)))
+    module_p <- (sum(Null_check >= mean(module_check), na.rm = TRUE)) /(n_perm)
 
     data.frame(
       sample = sample_id,
@@ -159,7 +159,9 @@ module_covariance_test <- function(module_genes, expr, meta,
       covariance_z = (observed_covariance - null_mean) / null_sd,
       empirical_p_greater_than_null = module_p,
       Null_check = I(list(Null_check)),
-      Module_check = I(list(module_check))
+      Module_check = I(list(module_check)),
+      Dist_from_mean = I(list((module_check - null_mean)/null_sd)),
+      mean_dist_mean = (observed_covariance-null_mean)/null_sd
     )
   })
 
@@ -230,22 +232,25 @@ plot_background_coexpression <- function(result,
       module = result$module[row],
       sample = result$sample[row],
       background = result$background[row],
-      covariance = unlist(result$Module_check[[row]])
+      covariance = unlist(result$Dist_from_mean[[row]]),
+      mean_dist_mean=result$mean_dist_mean[row]
     )
   }))
 
   observed_values <- unique(result[c("module", "sample", "background",
-                                     "module_mean_covariance")])
-
+                                     "mean_dist_mean")])
+  
+    
+  
   p <- ggplot(plot_values, aes(x = background, y = covariance,
                                fill = background)) +
     geom_violin(trim = FALSE, scale = "width") +
     geom_point(data = observed_values,
-               aes(x = background, y = module_mean_covariance),
-               color = "black", size = 1.5, inherit.aes = FALSE,
+               aes(x = background, y = mean_dist_mean),
+               color = "black", size = 0.7, inherit.aes = FALSE,
                position = position_jitter(width = 0.08)) +
     facet_wrap(~ module, scales = "free_y") +
-    labs(x = "Background", y = "Mean pairwise gene covariance") +
+    labs(x = "Background", y = "Z value of Module Mean pairwise gene covariance") +
     theme_classic() +
     theme(legend.position = "none")
 
@@ -351,13 +356,14 @@ if (!is.null(metacell_covariance_results) && nrow(metacell_covariance_results) >
   metacell_sample_summary <- NULL
 }
 
-write.csv(metacell_covariance_results,
-          paste0(dataout, "metacell_covariance_results.csv"),
-          row.names = FALSE)
+metacell_covariance_results$mean_dist_mean<-(metacell_covariance_results$module_mean_covariance - metacell_covariance_results$null_mean_covariance)/metacell_covariance_results$null_sd_covariance
+
+
+saveRDS(metacell_covariance_results,
+          paste0(dataout, "metacell_covariance_results.rds"))
 if (!is.null(metacell_sample_summary)) {
-  write.csv(metacell_sample_summary,
-            paste0(dataout, "metacell_covariance_summary.csv"),
-            row.names = FALSE)
+  saveRDS(metacell_sample_summary,
+            paste0(dataout, "metacell_covariance_summary.rds"))
 }
 plot_module_covariance(metacell_covariance_results,
                        output_dir = "metacell_covariance_plots")
@@ -368,5 +374,5 @@ plot_background_coexpression(
 
 
 
-
+result<-read_csv("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_UCC_int/Module_Covariance/metacell_covariance_results.csv")
 

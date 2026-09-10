@@ -394,7 +394,7 @@ head(hub_df)
 
 
 #Saving the final versions of WGCNA analysis. Both the wt_ object containing the metacells and the full dataset.
-saveRDS(seurat_obj,paste0(dataout,"/",Target_name,"WGCNA_final.rds"))
+saveRDS(seurat_obj,paste0(dataout,"/",Target_name,"WGCNA_final_WTonly_projected.rds"))
 
 saveRDS(wt_seurat_obj,paste0(dataout,"/",Target_name,"WGCNA_final_WTonly.rds"))
 

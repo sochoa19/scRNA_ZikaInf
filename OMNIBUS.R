@@ -14,6 +14,7 @@ library(ggplot2)
 library(ggvenn)
 library(pheatmap)
 library(ggalluvial)
+library(ggrepel)
 
 # co-expression network analysis packages:
 library(WGCNA)
@@ -24,7 +25,6 @@ library(fs)
 library(purrr)
 library(readr)
 library(tidyr)
-library(ggrepel)
 library(tibble)
 library(Matrix)
 library(stringr)
@@ -37,10 +37,10 @@ library(org.Hs.eg.db)
 
 #Set the name of the Seurat object.rds that you wish to work with. don't include _seur.rds
 
-Target_name<-"new_UCC_int"
+Target_name<-"new_URN_int"
 
 Attempt_number<-1
-#IS THIS SEURAT OBJECT NORMALIZED?
+#IS THIS SEURAT OBJECT UnNORMALIZED?
 Norm_Check<-FALSE
 
 
@@ -107,6 +107,7 @@ Seurat_analysis<-function(Target_name,Norm_Check){
   dir_create(dataout)
   dir_create(paste0(dataout,"Figures/Dimensional_Reduction"),recurse=TRUE)
   dir_create(paste0(dataout,"Figures/VolcanoPlots"),recurse=TRUE)
+  dir_create(paste0(dataout,"Figures/GO"),recurse=TRUE)
   
   Seur_target<-readRDS(paste0(datain,Target_name,"_seur.rds"))
   
@@ -157,7 +158,7 @@ Seurat_analysis<-function(Target_name,Norm_Check){
   
   L.up.gene_sets <- map(de.L.list, ~{
     .x %>%
-      filter(expression != "Up") %>%
+      filter(expression == "Up") %>%
       pull(gene) %>%
       unique()
   })
@@ -165,7 +166,7 @@ Seurat_analysis<-function(Target_name,Norm_Check){
   
   L.down.gene_sets <- map(de.L.list, ~{
     .x %>%
-      filter(expression != "Down") %>%
+      filter(expression == "Down") %>%
       pull(gene) %>%
       unique()
   })
@@ -175,7 +176,7 @@ Seurat_analysis<-function(Target_name,Norm_Check){
   
   P.up.gene_sets <- map(de.P.list, ~{
     .x %>%
-      filter(expression != "Up") %>%
+      filter(expression == "Up") %>%
       pull(gene) %>%
       unique()
   })
@@ -183,7 +184,7 @@ Seurat_analysis<-function(Target_name,Norm_Check){
   
   P.down.gene_sets <- map(de.P.list, ~{
     .x %>%
-      filter(expression != "Down") %>%
+      filter(expression == "Down") %>%
       pull(gene) %>%
       unique()
   })
@@ -191,7 +192,135 @@ Seurat_analysis<-function(Target_name,Norm_Check){
   
   
   
+  ####GO TERMS FOR ALL DE ####
   
+  library(clusterProfiler)
+  library(AnnotationDbi)
+  library(org.Hs.eg.db)
+  
+  #getting all genes queried in the DE for each sample
+  for (i in names(de.P.list)){
+    gene_universe<-de.P.list[[i]]$gene
+    
+    
+    #Compiles entrez ids for the universe of possible gene
+    universe.symb <- bitr(
+      gene_universe,
+      fromType = "SYMBOL",
+      toType = "ENTREZID",
+      OrgDb = org.Hs.eg.db
+    )
+    
+    #takes any genes still in ENSEMBL format and converts them into entrez ids. HIGH ERROR RATE LOOK INTO IT!
+    universe.ensembl <- bitr(
+      gene_universe[grepl("ENSG",gene_universe)],
+      fromType = "ENSEMBL",
+      toType = "ENTREZID",
+      OrgDb = org.Hs.eg.db
+    )
+    
+    univ.combined<-append(universe.symb$ENTREZID, universe.ensembl$ENTREZID)
+    
+    #converting all genes 
+    up_genelist<-P.up.gene_sets[[i]]
+    
+    #Convert all the gene symbols into entrez ids. 
+    up_gene.symb <- bitr(
+      up_genelist,
+      fromType = "SYMBOL",
+      toType = "ENTREZID",
+      OrgDb = org.Hs.eg.db
+    )
+    
+    #Checks to see if any of the ENSEMBL ids in the module can be converted. If not skip conversion 
+    if (length(grep(paste(up_genelist[grepl("ENSG",up_genelist)],collapse="|"),keys(org.Hs.eg.db, keytype = "ENSEMBL")))==0
+    ){
+      up_gene.combined<-up_gene.symb$ENTREZID
+      
+    }else{
+      up_gene.ensembl<- bitr(
+        up_genelist[grepl("ENSG",up_genelist)],
+        fromType= "ENSEMBL",
+        toType = "ENTREZID",
+        OrgDb = org.Hs.eg.db
+        
+      )
+      
+      up_gene.combined <-append(up_gene.symb$ENTREZID,up_gene.ensembl$ENTREZID) #combine symbol->entrez and ensembl->entrez
+    }
+    
+    #converting all downregualted genes
+    down_genelist<-P.down.gene_sets[[i]]
+    
+    #Convert all the gene symbols into entrez ids. 
+    down_gene.symb <- bitr(
+      down_genelist,
+      fromType = "SYMBOL",
+      toType = "ENTREZID",
+      OrgDb = org.Hs.eg.db
+    )
+    
+    #Checks to see if any of the ENSEMBL ids in the module can be converted. If not skip conversion 
+    if (length(grep(paste(down_genelist[grepl("ENSG",down_genelist)],collapse="|"),keys(org.Hs.eg.db, keytype = "ENSEMBL")))==0
+    ){
+      down_gene.combined<-down_gene.symb$ENTREZID
+      
+    }else{
+      down_gene.ensembl<- bitr(
+        down_genelist[grepl("ENSG",down_genelist)],
+        fromType= "ENSEMBL",
+        toType = "ENTREZID",
+        OrgDb = org.Hs.eg.db
+        
+      )
+      
+      down_gene.combined <-append(down_gene.symb$ENTREZID,down_gene.ensembl$ENTREZID) #combine symbol->entrez and ensembl->entrez
+    }
+    
+    noGO<-list()
+    
+    ontol<-"BP" #This can be changed depending on what ontology database you want to use
+    dir_create(paste0(dataout, "/Figures/GO/",ontol),recurse=TRUE)
+    qcutoff=0.05 #sets the qvalue cutoff to be used in GO enrichment 0.05 is standard
+    
+    #GO enrichment 
+    up_ego <- enrichGO(
+      gene = up_gene.combined,
+      universe = univ.combined,
+      OrgDb = org.Hs.eg.db,
+      keyType = "ENTREZID",
+      ont = ontol, #This can be changed depending on what ontology database you want to use
+      readable = TRUE,
+      qvalueCutoff = qcutoff
+      
+    )
+    
+    #GO enrichment 
+    down_ego <- enrichGO(
+      gene = down_gene.combined,
+      universe = univ.combined,
+      OrgDb = org.Hs.eg.db,
+      keyType = "ENTREZID",
+      ont = ontol, #This can be changed depending on what ontology database you want to use
+      readable = TRUE,
+      qvalueCutoff = qcutoff
+      
+    )
+    
+    #create a dotplot of the 10 most significant enriched terms for that module
+    dotplot(up_ego, showCategory = 10)+
+      ggtitle(paste0(ontol,"GO enrichment of ZSC", i, " upregulated in PIC response"))
+    ggsave(paste0(dataout,"/Figures/GO/",ontol,"/",i,"_UP_GO.png"),height=1800,width=2200,units= "px", dpi= 300)
+    
+    
+    #create a dotplot of the 10 most significant enriched terms for that module
+    dotplot(down_ego, showCategory = 10)+
+      ggtitle(paste0(ontol,"GO enrichment of ZSC", i, " downregulated in PIC response"))
+    ggsave(paste0(dataout,"/Figures/GO/",ontol,"/",i,"_down_GO.png"),height=1800,width=2200,units= "px", dpi= 300)
+    
+    
+    
+  }
   
   
   
@@ -308,6 +437,7 @@ Seurat_analysis<-function(Target_name,Norm_Check){
   #new data out
   dataout<-paste0(dataout,"PIC_ONLY/")
   dir_create(paste0(dataout,"Figures/VolcanoPlots"),recursive = TRUE)
+  dir_create(paste0(dataout,"Figures/GO"),recurse=TRUE)
   de.P.list<-list()
   sig.P.names<-list()
   #Iterate DE Volcano function over each background of the dataset. 
@@ -328,7 +458,7 @@ Seurat_analysis<-function(Target_name,Norm_Check){
   
   P.up.gene_sets <- map(de.P.list, ~{
     .x %>%
-      filter(expression != "Up") %>%
+      filter(expression == "Up") %>%
       pull(gene) %>%
       unique()
   })
@@ -336,15 +466,141 @@ Seurat_analysis<-function(Target_name,Norm_Check){
   
   P.down.gene_sets <- map(de.P.list, ~{
     .x %>%
-      filter(expression != "Down") %>%
+      filter(expression == "Down") %>%
       pull(gene) %>%
       unique()
   })
   P.down.WT.genes<-P.down.gene_sets[["C"]]
   
+  
+  #RUN GO ON EACH DIFFERNTIAL EXPRESSION LIST
+  
+  #getting all genes queried in the DE for each sample
+  for (i in names(de.P.list)){
+    gene_universe<-de.P.list[[i]]$gene
+    
+    
+    #Compiles entrez ids for the universe of possible gene
+    universe.symb <- bitr(
+      gene_universe,
+      fromType = "SYMBOL",
+      toType = "ENTREZID",
+      OrgDb = org.Hs.eg.db
+    )
+    
+    #takes any genes still in ENSEMBL format and converts them into entrez ids. HIGH ERROR RATE LOOK INTO IT!
+    universe.ensembl <- bitr(
+      gene_universe[grepl("ENSG",gene_universe)],
+      fromType = "ENSEMBL",
+      toType = "ENTREZID",
+      OrgDb = org.Hs.eg.db
+    )
+    
+    univ.combined<-append(universe.symb$ENTREZID, universe.ensembl$ENTREZID)
+    
+    #converting all genes 
+    up_genelist<-P.up.gene_sets[[i]]
+    
+    #Convert all the gene symbols into entrez ids. 
+    up_gene.symb <- bitr(
+      up_genelist,
+      fromType = "SYMBOL",
+      toType = "ENTREZID",
+      OrgDb = org.Hs.eg.db
+    )
+    
+    #Checks to see if any of the ENSEMBL ids in the module can be converted. If not skip conversion 
+    if (length(grep(paste(up_genelist[grepl("ENSG",up_genelist)],collapse="|"),keys(org.Hs.eg.db, keytype = "ENSEMBL")))==0
+    ){
+      up_gene.combined<-up_gene.symb$ENTREZID
+      
+    }else{
+      up_gene.ensembl<- bitr(
+        up_genelist[grepl("ENSG",up_genelist)],
+        fromType= "ENSEMBL",
+        toType = "ENTREZID",
+        OrgDb = org.Hs.eg.db
+        
+      )
+      
+      up_gene.combined <-append(up_gene.symb$ENTREZID,up_gene.ensembl$ENTREZID) #combine symbol->entrez and ensembl->entrez
+    }
+    
+    #converting all downregualted genes
+    down_genelist<-P.down.gene_sets[[i]]
+    
+    #Convert all the gene symbols into entrez ids. 
+    down_gene.symb <- bitr(
+      down_genelist,
+      fromType = "SYMBOL",
+      toType = "ENTREZID",
+      OrgDb = org.Hs.eg.db
+    )
+    
+    #Checks to see if any of the ENSEMBL ids in the module can be converted. If not skip conversion 
+    if (length(grep(paste(down_genelist[grepl("ENSG",down_genelist)],collapse="|"),keys(org.Hs.eg.db, keytype = "ENSEMBL")))==0
+    ){
+      down_gene.combined<-down_gene.symb$ENTREZID
+      
+    }else{
+      down_gene.ensembl<- bitr(
+        down_genelist[grepl("ENSG",down_genelist)],
+        fromType= "ENSEMBL",
+        toType = "ENTREZID",
+        OrgDb = org.Hs.eg.db
+        
+      )
+      
+      down_gene.combined <-append(down_gene.symb$ENTREZID,down_gene.ensembl$ENTREZID) #combine symbol->entrez and ensembl->entrez
+    }
+    
+
+    ontol<-"BP" #This can be changed depending on what ontology database you want to use
+    dir_create(paste0(dataout, "/Figures/GO/",ontol),recurse=TRUE)
+    qcutoff=0.05 #sets the qvalue cutoff to be used in GO enrichment 0.05 is standard
+    
+    #GO enrichment 
+    up_ego <- enrichGO(
+      gene = up_gene.combined,
+      universe = univ.combined,
+      OrgDb = org.Hs.eg.db,
+      keyType = "ENTREZID",
+      ont = ontol, #This can be changed depending on what ontology database you want to use
+      readable = TRUE,
+      qvalueCutoff = qcutoff
+      
+    )
+    
+    #GO enrichment 
+    down_ego <- enrichGO(
+      gene = down_gene.combined,
+      universe = univ.combined,
+      OrgDb = org.Hs.eg.db,
+      keyType = "ENTREZID",
+      ont = ontol, #This can be changed depending on what ontology database you want to use
+      readable = TRUE,
+      qvalueCutoff = qcutoff
+      
+    )
+    
+    #create a dotplot of the 10 most significant enriched terms for that module
+    dotplot(up_ego, showCategory = 10)+
+      ggtitle(paste0(ontol,"GO enrichment of ZSC", i, " upregulated against WT PIC response"))
+    ggsave(paste0(dataout,"/Figures/GO/",ontol,"/",i,"_UP_GO.png"),height=1800,width=2200,units= "px", dpi= 300)
+    
+    
+    #create a dotplot of the 10 most significant enriched terms for that module
+    dotplot(down_ego, showCategory = 10)+
+      ggtitle(paste0(ontol,"GO enrichment of ZSC", i, " downregulated against WT PIC response"))
+    ggsave(paste0(dataout,"/Figures/GO/",ontol,"/",i,"_down_GO.png"),height=1800,width=2200,units= "px", dpi= 300)
+    
+    
+    
+  }
+  
+  
+  
   dir_create(dataout,"Gene_Lists")
-  
-  
   #Turn each gene list into a .txt file so that It can be input into tfTargets
   for (i in names(P.up.gene_sets)){
     writeLines(unlist(P.up.gene_sets[i]),paste0(dataout,"Gene_Lists/",i,"_up.txt"))
@@ -395,6 +651,8 @@ Seurat_analysis<-function(Target_name,Norm_Check){
     
     all_tfs<-rbind(all_tfs,tf_csv)
   }
+  
+  all_tfs<-all_tfs %>% group_by(Origin,Direction) %>% arrange(P_Value)
   
   # get top pvalue entries per origin and direction
   top_tfs<-all_tfs[,c(2,5,9,10,11,12)] %>% 
@@ -1521,12 +1779,517 @@ PIC_ONLY_WGCNA<-function(Target_name,Attempt_Number){
 }
 
 
+
+###PIC_ONLY_WGCNA
+J_PIC_ONLY_WGCNA<-function(Target_name,Attempt_Number,parameter_list){
+  
+  datain<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Seurat_Analysis")
+  dataout<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Alt_WGCNA/","Attempt_",Attempt_Number)
+  
+  k.parameter<-as.numeric(parameter_list[1])
+  max_shared<-as.numeric(parameter_list[2])
+  net.type<-parameter_list[3]
+  merge_height<-as.numeric(parameter_list[6])
+  deep_split<-as.numeric(parameter_list[7])
+  mod_size<-as.numeric(parameter_list[8])
+  
+  
+  
+  #make sure the data_out folder is still there
+  dir_create(dataout)
+  
+  saveRDS(parameter_list,paste0(dataout,"/Parameter_list.rds"))
+  #make sure the Figure data
+  dir_create(paste0(dataout,"/Figures"))
+  
+  seurat_obj<-readRDS(paste0(datain,"/",Target_name,"_final.rds"))
+  
+  
+  # using the cowplot theme for ggplot
+  theme_set(theme_cowplot())
+  
+  # set random seed, k nearest neighbors parameter and network type for reproducibility
+  set.seed(12345)
+  k.parameter<-45
+  max_shared<-15
+  net.type<-"signed"
+  merge_height<-0.15
+  deep_split<-3
+  mod_size<-60
+  
+  parameter_list<-c(k.parameter,max_shared,net.type,Target_name,Attempt_Number,merge_height,deep_split,mod_size)
+  saveRDS(parameter_list,paste0(dataout,"/Parameter_list.rds"))
+  
+  
+  # optionally enable multithreading
+  enableWGCNAThreads(nThreads = 4)
+  
+  
+  ###Create a GFP type seurat object
+  wt_seurat_obj<-subset(seurat_obj, subset= Background=="J")
+  
+  ##Create a PIC only GFP seurat object
+  wt_seurat_obj<-subset(wt_seurat_obj, subset= Treatment=="P")
+  
+  
+  #Set up subsetted object for WGCNA
+  wt_seurat_obj <- SetupForWGCNA(
+    wt_seurat_obj,
+    gene_select = "fraction", # the gene selection approach
+    fraction = 0.05, # fraction of cells that a gene needs to be expressed in order to be included
+    wgcna_name = "WT_isolate" # the name of the hdWGCNA experiment
+  )
+  
+  
+  #Creating metacells using the samples as the biosamples
+  #Would it be better to construct them out of the same background. so that LPS, PIC ad CTRL cells can comingle into the same emtacell group? In case some cells in the treated samples remain in a homoeostatic state
+  wt_seurat_obj <- MetacellsByGroups(
+    seurat_obj = wt_seurat_obj,
+    group.by = c("Background"), # specify the columns in seurat_obj@meta.data to group by
+    reduction = 'pca', # select the dimensionality reduction to perform KNN on
+    k = k.parameter, # nearest-neighbors parameter
+    max_shared = max_shared, # maximum number of shared cells between two metacells
+    ident.group = 'Background' # set the Idents of the metacell seurat object
+  )
+  
+  
+  # normalize metacell expression matrix:
+  wt_seurat_obj <- NormalizeMetacells(wt_seurat_obj)
+  
+  
+  
+  ##########WGCNA and correlation of modules####
+  #Run hdWGCNA on only the WT cells. THis will allow for the discovery of
+  #expected module response to LPS and PIC
+  wt_seurat_obj <- SetDatExpr(
+    wt_seurat_obj,
+    assay = 'RNA', # using RNA assay
+    layer = 'data' # using normalized data
+  )
+  
+  
+  # Test different soft powers:
+  wt_seurat_obj <- TestSoftPowers(
+    wt_seurat_obj,
+    networkType = net.type # you can also use "unsigned" or "signed hybrid"
+  )
+  
+  # plot the results:
+  plot_list <- PlotSoftPowers(wt_seurat_obj)
+  
+  
+  # assemble with patchwork
+  wrap_plots(plot_list, ncol=2)
+  
+  #Consturct the WGCNA Network
+  wt_seurat_obj <- ConstructNetwork(
+    wt_seurat_obj,
+    networktype=net.type,
+    tom_name = 'J_PIC_isolate' , # name of the topological overlap matrix written to disk
+    #tom_outdir= paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/WGCNA"),
+    deepSplit = deep_split,
+    minModuleSize = mod_size,
+    mergeCutHeight = merge_height,
+    overwrite_tom=TRUE,
+    store_tom_in_seurat=TRUE
+  )
+  PlotDendrogram(wt_seurat_obj, main='WT PIC hdWGCNA Dendrogram')
+  
+  #compute all MEs in the full single-cell dataset
+  wt_seurat_obj <- ModuleEigengenes(
+    wt_seurat_obj
+  )
+  
+  # compute eigengene-based connectivity (kME):
+  wt_seurat_obj <- ModuleConnectivity(wt_seurat_obj)
+  
+  
+  p <- PlotKMEs(wt_seurat_obj, ncol=5)
+  
+  p
+  
+  #subsetting only the PIC treated samples acrosss all backgrounds
+  p_seurat_obj<-subset(seurat_obj, subset= Treatment=="P")
+  
+  
+  p1 <- DimPlot(seurat_obj, group.by='Treatment') +
+    umap_theme() +
+    ggtitle('Full data') 
+  
+  
+  p2 <- DimPlot(p_seurat_obj, group.by='Background') +
+    umap_theme() +
+    ggtitle('PIC only') 
+  
+  
+  p1 | p2
+  
+  
+  
+  # Project modules from query to reference dataset
+  p_seurat_obj <- ProjectModules(
+    seurat_obj = p_seurat_obj,
+    seurat_ref = wt_seurat_obj,
+    # vars.to.regress = c(), # optionally regress covariates when running ScaleData
+    #group.by.vars = "Sample", # column in seurat_query to run harmony on. We already ran harmony on our dataset
+    wgcna_name_proj="projected", # name of the new hdWGCNA experiment in the query dataset
+    wgcna_name = "WT_isolate" # name of the hdWGCNA experiment in the ref dataset
+  )
+  
+  
+  #plot all module MEs across all cells onto the UMAP
+  plot_list <- ModuleFeaturePlot(
+    p_seurat_obj,
+    features='MEs', # plot the MEs
+    order=TRUE # order so the points with highest MEs are on top
+  )
+  
+  # stitch together with patchwork
+  wrap_plots(plot_list, ncol=6)
+  ggsave(paste0(dataout,"/Figures/ModuleUMAP.png"),width=10,height=8)
+  
+  
+  ##correlelogram to check module correlation
+  ModuleCorrelogram(p_seurat_obj,features="MEs")
+  
+  
+  
+  ##Correlating modules to samples using a dot plot
+  #getting the MEs
+  MEs <- GetMEs(p_seurat_obj, harmonized=FALSE)
+  modules <- GetModules(p_seurat_obj)
+  mods <- levels(modules$module); mods <- mods[mods != 'grey']
+  
+  # add MEs to Seurat meta-data:
+  p_seurat_obj@meta.data <- cbind(p_seurat_obj@meta.data, MEs)
+  
+  z<-DotPlot(subset(x=p_seurat_obj,subset=Treatment=="P"), features=mods, group.by = 'Background')
+  z <- z +
+    RotatedAxis() +
+    scale_color_gradient2(high='red', mid='grey95', low='blue') +
+    ggtitle(paste0("WT module correlation in PIC Treatment"))
+  ggsave(paste0(dataout,"/Figures/Background_Dotplot.png"),width = 10, height=5)
+  
+  
+  
+  
+  
+  
+  
+  #######RUNNING GO on the modules and on the genes with kme above 0.5
+  library(clusterProfiler)
+  library(AnnotationDbi)
+  library(org.Hs.eg.db)
+  
+  #get modules from wild type isolate reference seurat object
+  modules<-GetModules(wt_seurat_obj)
+  mods <- levels(modules$module); mods <- mods[mods != 'grey']
+  
+  
+  #Compiles entrez ids for the universe of possible gene
+  universe.symb <- bitr(
+    modules$gene_name,
+    fromType = "SYMBOL",
+    toType = "ENTREZID",
+    OrgDb = org.Hs.eg.db
+  )
+  
+  #takes any genes still in ENSEMBL format and converts them into entrez ids. HIGH ERROR RATE LOOK INTO IT!
+  universe.ensembl <- bitr(
+    modules[grepl("ENSG",modules$gene_name),1],
+    fromType = "ENSEMBL",
+    toType = "ENTREZID",
+    OrgDb = org.Hs.eg.db
+  )
+  
+  
+  univ.combined<-append(universe.symb$ENTREZID, universe.ensembl$ENTREZID)
+  
+  #
+  
+  #loop for creating GO BP terms dot plots
+  #initialize a list to populate with modules with no significant GO terms
+  noGO<-list()
+  
+  topGO<-list()
+  
+  ontol<-"BP" #This can be changed depending on what ontology database you want to use
+  dir_create(paste0(dataout, "/Figures/GO/",ontol),recurse=TRUE)
+  
+  for (i in mods){
+    
+    currcolor<-i #sets the name of the module to be put through GO enrichment analysis
+    genelist<-modules[modules$color==currcolor,1] #populates genelist with all the genes that make up this module
+    
+    #Convert all the gene symbols into entrez ids. 
+    gene.symb <- bitr(
+      genelist,
+      fromType = "SYMBOL",
+      toType = "ENTREZID",
+      OrgDb = org.Hs.eg.db
+    )
+    
+    #Checks to see if any of the ENSEMBL ids in the module can be converted. If not skip conversion 
+    if (length(grep(paste(genelist[grepl("ENSG",genelist)],collapse="|"),keys(org.Hs.eg.db, keytype = "ENSEMBL")))==0
+    ){
+      gene.combined<-gene.symb$ENTREZID
+      
+    }else{
+      gene.ensembl<- bitr(
+        genelist[grepl("ENSG",genelist)],
+        fromType= "ENSEMBL",
+        toType = "ENTREZID",
+        OrgDb = org.Hs.eg.db
+        
+      )
+      
+      gene.combined <-append(gene.symb$ENTREZID,gene.ensembl$ENTREZID) #combine symbol->entrez and ensembl->entrez
+      
+    }
+    
+    
+    qcutoff=0.05 #sets the qvalue cutoff to be used in GO enrichment 0.05 is standard
+    #GO enrichment 
+    ego <- enrichGO(
+      gene = gene.combined,
+      universe = univ.combined,
+      OrgDb = org.Hs.eg.db,
+      keyType = "ENTREZID",
+      ont = ontol, #This can be changed depending on what ontology database you want to use
+      readable = TRUE,
+      qvalueCutoff = qcutoff
+      
+    )
+    #if there are no GO enrichment results that pass the qvalue cutoff add the module name to noGO list
+    if(sum(ego@result$qvalue<=qcutoff)==0){
+      print(paste0("The ",currcolor, " module does not have any significant terms associated to it"))
+      noGO<-append(noGO,currcolor)
+      next
+    }
+    #create a dotplot of the 10 most significant enriched terms for that module
+    dotplot(ego, showCategory = 10)+
+      ggtitle(paste0(ontol,"GO enrichment of ", currcolor, " module"))
+    ggsave(paste0(dataout,"/Figures/GO/",ontol,"/",currcolor,"_GO.png"),height=1800,width=2200,units= "px", dpi= 300)
+    topGO<-append(topGO,paste(head(ego@result$Description,n=5),collapse=","))
+  }
+  capture.output(noGO,file = paste0(dataout,"/Figures/GO/",ontol,"/nonSigModules.txt"))
+  
+  
+  
+  #saving out the fully anlayzed wt_seruat object _in this case the PIC_WT_
+  saveRDS(wt_seurat_obj,paste0(dataout,"/",Target_name,"WGCNA_final_PIC_WT.rds"))
+  
+  #saving the WGCNA projection onto ahe all PIC subset
+  saveRDS(p_seurat_obj,paste0(dataout,"/",Target_name,"WGCNA_final_PIC_WT_projected_allPIC.rds"))
+  
+  #####Module preservation across backgrounds####
+  
+  #Adapted Complete WGCNA function to check module preservation across all backgrounds
+  #will output the complete module preservation df pres as an rds for each treatment
+  wt_seurat_obj<-readRDS(paste0(dataout,"/",Target_name,"WGCNA_final_PIC_WT.rds"))
+  p_seurat_obj<-readRDS(paste0(dataout,"/",Target_name,"WGCNA_final_PIC_WT_projected_allPIC.rds"))
+  dir_create(paste0(dataout,"/Module_preservation"))
+  
+  
+  ## WT to BULK MODULE PRESERVATION
+  # set expression matrix for reference dataset
+  wt_expr <- GetDatExpr(wt_seurat_obj)
+  
+  
+  
+  # a loop that iterates over all teh background in the suerat object and cehcks for module preservation.
+  #it will save all teh mp objects under the Module preservation directory, to be compared later
+  for (i in unique(p_seurat_obj$Background)){
+    
+    #Set expression matrix for P dataset one background at a time
+    # Subset to the cells you want to use as the query
+    query <- subset(
+      p_seurat_obj,
+      subset = Background == i
+    )
+    
+    
+    
+    #Set up subsetted object for WGCNA
+    query <- SetupForWGCNA(
+      query,
+      gene_select = "fraction", # the gene selection approach
+      fraction = 0.05, # fraction of cells that a gene needs to be expressed in order to be included
+      wgcna_name = "projected" # the name of the hdWGCNA experiment
+    )
+    
+    
+    #Creating metacells for the query dataset as well to compare metcells vs metacells
+    query <- MetacellsByGroups(
+      seurat_obj = query,
+      group.by = c("Background"), # specify the columns in seurat_obj@meta.data to group by
+      reduction = 'pca', # select the dimensionality reduction to perform KNN on
+      k = k.parameter, # nearest-neighbors parameter
+      max_shared = max_shared, # maximum number of shared cells between two metacells
+      ident.group = 'Background' # set the Idents of the metacell seurat object
+    )
+    
+    
+    # normalize metacell expression matrix:
+    query <- NormalizeMetacells(query)
+    
+    
+    
+    query <- SetDatExpr(
+      query,
+      assay = "RNA",
+      slot = "data",
+      wgcna_name = "projected"
+    )
+    
+    back_expr<-GetDatExpr(query)
+    
+    # set up the modules
+    modules <- GetModules(wt_seurat_obj)
+    
+    ref_modules <- list(ref = modules$module)
+    
+    # set up multiExpr:
+    setLabels <- c("ref", "query")
+    multiExpr <- list(
+      ref = list(data=wt_expr),
+      query = list(data=back_expr)
+    )
+    
+    
+    
+    #Calculate module preservation from PIC WT sc data onto other background PIC
+    mp <- WGCNA::modulePreservation(
+      multiExpr,
+      ref_modules,
+      referenceNetworks = 1,
+      nPermutations = 150 # set this to whatever number is suitable 
+    )
+    
+    saveRDS(mp,paste0(dataout,"/Module_preservation/",i,"mod_pres.rds"))
+    
+  }
+  
+  #Pulling al the mp files and summarizing the results in a single graph
+  pres_summ<-list()
+  median_summ<-list()
+  cor_summ<-list()
+  
+  for (i in unique(p_seurat_obj$Background)){
+    df<-readRDS(paste0(dataout,"/Module_preservation/",i,"mod_pres.rds"))
+    pres <- df$preservation$Z[[1]][[2]]
+    #figure out what to do with median rank. maybe
+    pres$MedianRank<-df$quality$observed$ref.ref$inColumnsAlsoPresentIn.query$medianRank.qual
+    pres_summ[[i]]<-pres$Zsummary.pres
+    median_summ[[i]]<-pres$MedianRank
+    cor_summ[[i]]<-df$preservation$observed$ref.ref$inColumnsAlsoPresentIn.query$cor.cor
+  }
+  
+  pres_summ<-as.data.frame(pres_summ)
+  rownames(pres_summ)<-rownames(pres)
+  colnames(pres_summ)<-gsub("X","",colnames(pres_summ))
+  
+  plot_df <- pres_summ %>%
+    tibble::rownames_to_column("Module") %>%
+    pivot_longer(
+      cols = -Module,
+      names_to = "Background",
+      values_to = "Zsummary"
+    )
+  
+  
+  plot_df$Preservation <- cut(
+    plot_df$Zsummary,
+    breaks = c(-Inf, 2, 10, Inf),
+    labels = c("Not preserved", "Moderately", "Strongly")
+  )
+  
+  ggplot(plot_df,
+         aes(x = Module,
+             y = Zsummary,
+             color = Background)) +
+    geom_point(
+      position = position_dodge(width = 0.5),
+      size = 3
+    ) +
+    geom_hline(yintercept = c(2, 10),
+               linetype = "dashed",
+               color = c("orange", "darkgreen")) +
+    theme_bw() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1)
+    ) +
+    labs(
+      x = "Module",
+      y = "Zsummary"
+    )
+  
+  ggsave(paste0(dataout,"/Module_preservation/ZSumm.png"))
+  
+  
+  #correlation summary
+  cor_summ<-as.data.frame(cor_summ)
+  rownames(cor_summ)<-rownames(pres)
+  colnames(cor_summ)<-gsub("X","",colnames(cor_summ))
+  
+  
+  
+  
+  plot_df <- cor_summ %>%
+    tibble::rownames_to_column("Module") %>%
+    pivot_longer(
+      cols = -Module,
+      names_to = "Background",
+      values_to = "Cor.cor"
+    )
+  
+  
+  
+  ggplot(plot_df,
+         aes(x = Module,
+             y = Cor.cor,
+             color = Background)) +
+    geom_point(
+      position = position_dodge(width = 0.5),
+      size = 3
+    ) +
+    theme_bw() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1)
+    ) +
+    labs(
+      x = "Module",
+      y = "cor.cor score"
+    )
+  
+  ggsave(paste0(dataout,"/Module_preservation/CorrelationSumm.png"))
+  #Module Summary
+  
+  modsumm<-data.frame(
+    modules=mods,
+    modsize=sapply(mods, function(i) sum(modules$module == i)))
+  
+}
+
+
+
+
+
+
+Target_name<- "UCC_int"
+Attempt_Number1<-1
+Attempt_Number2<-1
+
 #COMPARING WT MODULES TO PIC SUBMODULES
-Module_Compare<-function(Target_name,Attempt_Number1,Attempt_Number2){
+Module_Compare<-function(Target_name,Attempt_Number1,Attempt_Number2,PIC_target){
+  
+  #PIC object origin,
+  
   #READ IN BOTH MODULE GENE LISTS
   datain<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/")
   WT_obj<-readRDS(paste0(datain,"Isolate_WGCNA/Attempt_",Attempt_Number1,"/",Target_name,"WGCNA_final_WTonly.rds"))
-  PIC_obj<-readRDS(paste0(datain,"PIC_Only_WGCNA/Attempt_",Attempt_Number2,"/",Target_name,"WGCNA_final_PIC_WT.rds"))
+  PIC_obj<-readRDS(paste0(datain,PIC_target,"_WGCNA/Attempt_",Attempt_Number2,"/",Target_name,"WGCNA_final_PIC_WT.rds"))
+  
   
   wtmods<-GetModules(WT_obj)
   picmods<-GetModules(PIC_obj)
@@ -1539,23 +2302,11 @@ Module_Compare<-function(Target_name,Attempt_Number1,Attempt_Number2){
   alluvial_data<-merged_mods %>% dplyr::count(WT_Modules,PIC_Modules) 
   
   
+  #make a vector of all the module colors and assign their own color to them. 
+  module_colors<-as.character(unique(c(merged_mods$PIC_Modules,merged_mods$WT_Modules)))
+  names(module_colors)<-unique(c(merged_mods$PIC_Modules,merged_mods$WT_Modules))
   
-  module_colors <- c(
-    turquoise = "turquoise",
-    blue      = "blue",
-    brown     = "brown",
-    yellow    = "yellow",
-    green     = "green",
-    red       = "red",
-    black     = "grey40",
-    pink      = "pink",
-    magenta   = "magenta",
-    purple    = "purple",
-    tan       = "tan",
-    salmon    = "salmon",
-    grey      = "grey",
-    greenyellow="greenyellow"
-  )
+  
   
   
   
@@ -1578,7 +2329,7 @@ Module_Compare<-function(Target_name,Attempt_Number1,Attempt_Number2){
       expand = c(0.15, 0.05)
     ) +
     theme_cowplot()
-  ggsave(paste0(datain,"PIC_Only_WGCNA/Attempt_",Attempt_Number2,"/Figures/ModuleDestiny.png"),height=10,width=8)
+  ggsave(paste0(datain,PIC_target,"_WGCNA/Attempt_",Attempt_Number2,"/Figures/ModuleDestiny.png"),height=10,width=8)
 
   
   
@@ -1601,9 +2352,83 @@ Module_Compare<-function(Target_name,Attempt_Number1,Attempt_Number2){
       expand = c(0.15, 0.05)
     ) +
     theme_cowplot()
-  ggsave(paste0(datain,"PIC_Only_WGCNA/Attempt_",Attempt_Number2,"/Figures/ModuleDestiny_wGrey.png"),height=10,width=8)
+  ggsave(paste0(datain,PIC_target,"_WGCNA/Attempt_",Attempt_Number2,"/Figures/ModuleDestiny_wGrey.png"),height=10,width=8)
   
+  
+  ##scRegNet on the genes transitioning out of turquoise
+  library(scRegNet)
+  library(EnsDb.Hsapiens.v86)
+  
+  
+  #find out which PIC modules are mostly made up of turquoise WT genes
+  propmods<-merged_mods %>% group_by(PIC_Modules) %>% dplyr::count(WT_Modules) %>% mutate(prop=n/sum(n))
+  
+  descendant_mods<-levels(factor(propmods[propmods$WT_Modules=="turquoise" & propmods$prop >0.3 , "PIC_Modules"][[1]]))
+  
+  
+  turq_fate<-merged_mods %>% dplyr::filter(WT_Modules=="turquoise",PIC_Modules %in% descendant_mods) 
+  
+  seurat_obj<-readRDS(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"_seur.rds"))
+  
+  dataout<-paste0(datain,PIC_target,"_WGCNA/Attempt_",Attempt_Number2,"/Module_Fate/")
+  dir_create(dataout)
+  #How Should I subset my seurat object pull 
+  
+  re_scale_seurat_obj <- ScaleData(seurat_obj,features=rownames(seurat_obj))
+  
+  ##SUBSETTING OUT THE LPS TREATED CELLS AND MOST OF THE CONTROL ONES, LEAVING ONLY THE WT
+  re_scale_seurat_obj<-subset(re_scale_seurat_obj,subset= Treatment!="L")
+  
+  #re_scale_seurat_obj<-subset(re_scale_seurat_obj,subset= Treatment=="P"|Background=="C")
+  
+  # all genes from the assay
+  expressed_genes <- rownames(GetAssayData(re_scale_seurat_obj, assay = "RNA", layer = "data"))
+  
+  # a scaled expression matrix
+  m <- as.matrix(GetAssayData(re_scale_seurat_obj, assay = "RNA", layer = "scale.data"))
+  
+  
+  #initialize the summary list and the neg and pos associated tfs
+  all_assoc<-data.frame()
+  pos_assoc<-data.frame()
+  neg_assoc<-data.frame()
+  
+  for ( i in levels(factor(turq_fate$PIC_Modules))){
+    
+    mod_list<-turq_fate[turq_fate$PIC_Modules==i,1]
+    
+    #get rid of any NA values inside of the module gene list
+    mod_list<-mod_list[!is.na(mod_list)]
+    
+    mech_tfs<-mechanistic(mod_list,expressed_genes,organism="human",gene_id="symbol")
+    
+    
+    #change qvalue depending on teh lowest Q value found in the mech tf list
+    q_value=0.005
+    if (min(mech_tfs$q_value)>q_value){
+      q_value=min(mech_tfs$q_value)
+    }
+  
+    
+    # a message to keep track on what number module you're on
+    print(paste0(which(levels(factor(turq_fate$PIC_Modules))==i)," out of ", length(levels(factor(turq_fate$PIC_Modules)))))
+    assoc_tfs<-associate_with_expression(m,mech_tfs,organism="human",gene_id="symbol",method=c("pearson"),q_value = q_value)
+    
+    assoc_tfs$module<-i
+  
+    saveRDS(assoc_tfs,paste0(dataout,"Individual_Module_tfs_",i,".rds"))
+    
+    all_assoc<-rbind(all_assoc,assoc_tfs)
+    
+    
   }
+  
+  all_assoc<-all_assoc %>% dplyr::filter(Pearson_p_value<0.05) %>% group_by(module) %>% arrange(desc(Pearson_R),Pearson_p_value)
+  
+  saveRDS(all_assoc,paste0(dataout,"All_associated_tfs.rds"))
+  
+  
+}
 
 
 #CHECKING MODULE COVARIANCE BY WHOLE SAMPLE AND SUBSAMPLED BY METACELLS
@@ -1614,7 +2439,7 @@ Mod_Check<-function(Target_name,Attempt_number,B){
   dataout<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Module_Covariance/")
   dir_create(dataout)
   
-  obj <- readRDS(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/PIC_Only_WGCNA/",Attempt_number,"/",Target_name,"WGCNA_final_PIC_WT_projected_allPIC.rds" ))
+  obj <- readRDS(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Alt_WGCNA/",Attempt_number,"/",Target_name,"WGCNA_final_PIC_WT_projected_allPIC.rds" ))
   expr <- GetAssayData(obj, assay = "RNA", layer = "data")
   meta <- obj[[]]
   
@@ -1781,7 +2606,7 @@ Mod_Check<-function(Target_name,Attempt_number,B){
   saveRDS(covariance_results,paste0(dataout,"Covariance_df.rds"))
   # Compare module covariance against C for each module. These are comparisons
   # of sample-level means, rather than treating permutation draws as replicates.
-  reference_background <- "C"
+  reference_background <- "J"
   c_reference <- covariance_results[
     covariance_results$background == reference_background, , drop = FALSE]
   covariance_results$c_vs_reference_p <- NA_real_
@@ -1791,6 +2616,9 @@ Mod_Check<-function(Target_name,Attempt_number,B){
     query_rows <- which(covariance_results$module == module_name &
                           covariance_results$background != reference_background)
     if (length(reference_values) > 0 && length(query_rows) > 0) {
+      if (sd(reference_values)==0){
+        next
+      }
       covariance_results$c_vs_reference_p[query_rows] <- vapply(
         query_rows,
         function(row) t.test(unlist(covariance_results$Module_check[[row]]),
@@ -1800,7 +2628,10 @@ Mod_Check<-function(Target_name,Attempt_number,B){
     }
   }
   
-  write.csv(covariance_results,paste0(dataout,"module_covariance_results.csv") , row.names = FALSE)
+  covariance_results$Dist_from_mean<-I(lapply(covariance_results$Module_check, function(x) (x-covariance_results$null_mean_covariance)/covariance_results$null_sd_covariance))
+  
+  
+  saveRDS(covariance_results,paste0(dataout,"module_covariance_results.rds"))
   
   plot_module_covariance <- function(result, output_dir = "module_covariance_plots") {
     output_dir<-paste0(dataout,output_dir)
@@ -1831,22 +2662,23 @@ Mod_Check<-function(Target_name,Attempt_number,B){
         module = result$module[row],
         sample = result$sample[row],
         background = result$background[row],
-        covariance = unlist(result$Module_check[[row]])
+        covariance = unlist(result$Dist_from_mean[[row]]),
+        mean_dist_mean=mean(result$Dist_from_mean[[row]])
       )
     }))
     
-    observed_values <- unique(result[c("module", "sample", "background",
-                                       "module_mean_covariance")])
+    observed_values <- unique(plot_values[c("module", "sample", "background",
+                                       "mean_dist_mean")])
     
     p <- ggplot(plot_values, aes(x = background, y = covariance,
                                  fill = background)) +
       geom_violin(trim = FALSE, scale = "width") +
       geom_point(data = observed_values,
-                 aes(x = background, y = module_mean_covariance),
-                 color = "black", size = 1.5, inherit.aes = FALSE,
+                 aes(x = background, y = mean_dist_mean),
+                 color = "black", size = 0.7, inherit.aes = FALSE,
                  position = position_jitter(width = 0.08)) +
       facet_wrap(~ module, scales = "free_y") +
-      labs(x = "Background", y = "Mean pairwise gene covariance") +
+      labs(x = "Background", y = "Z value of pairwise gene covariance") +
       theme_classic() +
       theme(legend.position = "none")
     
@@ -1952,16 +2784,17 @@ Mod_Check<-function(Target_name,Attempt_number,B){
     metacell_sample_summary <- NULL
   }
   
-  write.csv(metacell_covariance_results,
-            paste0(dataout, "metacell_covariance_results.csv"),
-            row.names = FALSE)
+  saveRDS(metacell_covariance_results,paste0(dataout,"metacell_covariance_results.rds"))
+  
   if (!is.null(metacell_sample_summary)) {
-    write.csv(metacell_sample_summary,
-              paste0(dataout, "metacell_covariance_summary.csv"),
-              row.names = FALSE)
+    saveRDS(metacell_sample_summary,paste0(dataout,"Metacell_covaraince_summary.rds"))
   }
   plot_module_covariance(metacell_covariance_results,
                          output_dir = "metacell_covariance_plots")
+  #adding the column, Dist_to_mean to the metacell covariance results
+  metacell_covariance_results$Dist_from_mean<-I(lapply(metacell_covariance_results$Module_check, function(x) (x-metacell_covariance_results$null_mean_covariance)/metacell_covariance_results$null_sd_covariance))
+  
+  
   plot_background_coexpression(
     metacell_covariance_results,
     output_file = "metacell_coexpression_by_background.png"
@@ -1976,6 +2809,147 @@ MODULE_TF<-function(Target_name,Attempt_Number1,Attempt_Number2){
   dataout<-paste0()
 }
 
+
+###DE and WGCNA and TF Combo####
+Attempt_number<-1
+
+
+DE_WGCNA_Combo<-function(Target_name,Attempt_number){
+  
+  datain<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/")
+  vennDE<-readRDS(paste0(datain,"Seurat_Analysis/Comparison/Venn_Categories/All_Venn_List.rds"))
+  p_seurat_obj<-readRDS(paste0(datain,"PIC_Only_WGCNA/Attempt_",Attempt_number,"/",Target_name,"WGCNA_final_PIC_WT_projected_allPIC.rds"))
+  
+  
+  hub_genes<-GetHubGenes(p_seurat_obj)
+  mod_list<-GetModules(p_seurat_obj)
+  
+  
+  module_colors <- c(
+    turquoise = "turquoise",
+    blue      = "blue",
+    brown     = "brown",
+    yellow    = "yellow",
+    green     = "green",
+    red       = "red",
+    black     = "grey40",
+    pink      = "pink",
+    magenta   = "magenta",
+    purple    = "purple",
+    tan       = "tan",
+    salmon    = "salmon",
+    grey      = "grey",
+    greenyellow="greenyellow"
+  )
+  
+  
+  
+  
+  #adding module identity to all the DE genes
+  for (i in names(vennDE)){
+    vennDE[[i]]$module<-mod_list[vennDE[[i]]$gene,3]
+    vennDE[[i]]$origin<-i
+  }
+  
+  vennDF<-bind_rows(vennDE)
+  test<-vennDF %>% dplyr::filter(Classification %in% c("E","G"), module != "grey") %>% group_by(origin,module) %>% dplyr::count(Classification)
+  
+  ggplot(test,aes(x=origin,y=n,fill=module))+
+    geom_bar(position="stack",stat="identity")+
+    scale_fill_manual(values=module_colors)+
+    labs(x= "ZSC_Background", 
+         y="Number of genes belonging to module",
+         title="PIC responsive Differential genes")+
+    theme_cowplot()
+  
+  #Subtracting J genes from teh rest
+  #take all genes that are differentially in wxpres in WT PIC vs J PIC
+  upJ<-vennDF[vennDF$origin=="J" & vennDF$WT_Back_Treat=="Up","gene"]
+  downJ<-vennDF[vennDF$origin=="J" & vennDF$WT_Back_Treat=="Down","gene"]
+  
+  J_Purged<-vennDF %>% dplyr::filter(!(WT_Back_Treat=="Up" & gene %in% upJ)) %>% dplyr::filter(!(WT_Back_Treat=="Down" & gene %in% downJ))
+  J_Purged_plot<-J_Purged %>% dplyr::filter(Classification %in% c("E","G"), module != "grey") %>% group_by(origin,module) %>% dplyr::count(Classification)
+  
+  saveRDS(J_Purged, paste0(datain,"PIC_Only_WGCNA/Attempt_",Attempt_number,"/DE_module.rds"))
+  
+  ggplot(J_Purged_plot,aes(x=origin,y=n,fill=module))+
+    geom_bar(position="stack",stat="identity")+
+    scale_fill_manual(values=module_colors)+
+    labs(x= "ZSC_Background", 
+         y="Number of genes belonging to module",
+         title="PIC Responsive DE genes-purged of J genes")+
+    theme_cowplot()
+  
+  DE_PIC_response<- J_Purged %>% dplyr::filter(Classification %in% c("E","G"), module != "grey")
+  
+  allTFs<-readRDS(paste0(datain,"PIC_Only_WGCNA/Attempt_",Attempt_number,"/scRegNet/All_associated_tfs.rds"))
+  
+  if (type(allTFs)=="list"){
+    
+    #Create a grouping factor to split the indices evenly
+    groups <- cut(seq_along(allTFs), breaks = 12, labels = FALSE)
+    
+    #Split the list into X sub-lists
+    split_lists <- split(allTFs, groups)
+    
+    allTFs<-map(split_lists,bind_cols) |> bind_rows()
+  }
+  
+  
+  TF_summ<-dplyr::filter(allTFs,Pearson_q_value < 0.05) %>%  
+    #ADDA COLUMN STATING WHETHER THE PEARSON CORRELATION IS NEGATIVE OR POSITIVE
+    mutate(Direction=case_when( Pearson_R >0 ~ "Positive", Pearson_R <0 ~ "Negative" )) %>%
+    #ARRANGE BY THE Q VALUE AS WELL AS TEH ABSOLUTE PEARSON CORRELATION, TO KEEP THE MOST CORRELATED NEGATIVE AND POSITIVE TFS
+    arrange(Pearson_q_value,abs(Pearson_R))%>%
+    #SEPARATE TEH DF BY MODULE AND DIRECTION AND TAKE TEH 50 HIGHEST PERFORMING TFS
+    group_by(module, Direction)
+  
+  test<-DE_PIC_response[DE_PIC_response$gene %in% TF_summ$TF_symbol,]
+  
+  result<-data.frame()
+  for (i in 1:nrow(DE_PIC_response)){
+    result <- rbind(result,TF_summ %>% 
+                      dplyr::filter(str_detect(TF_targets_symbol, DE_PIC_response$gene[[i]])) %>% mutate(TF_hit=DE_PIC_response$gene[[i]],HIT_module=DE_PIC_response$module[[i]]))
+  }
+  test2<-result %>% group_by(Direction,module,TF_symbol) %>% dplyr::count(TF_hit)
+  
+  tf_to_plot<-test2[test2$module=="yellow",]
+  
+  tf_net<-data.frame(from=tf_to_plot$TF_symbol,to=tf_to_plot$TF_hit)
+  
+  graph <- as_tbl_graph(tf_net) %>%
+    mutate(is_gene = name %in% tf_net$to) %>%
+    mutate(tf_label = ifelse(is_gene, name, "")) # Empty string if it's a target gene
+  
+  # 3. Plot using the new 'tf_label' column
+  ggraph(graph, layout = 'stress') +
+    geom_edge_link(aes(alpha = 0.5 , edge_colour=tf_to_plot$Direction), show.legend = FALSE, arrow = arrow(length = unit(4, 'mm'))) +
+    geom_node_point(aes(color = is_gene), size = 5, show.legend = FALSE) +
+    geom_node_text(aes(label = name), repel = TRUE, size = 4, fontface = "bold") +
+    scale_color_manual(values = c("TRUE" = "darkred", "FALSE" = "grey70")) +
+    theme_void()
+  
+  
+  
+  
+  
+  graph<-as_tbl_graph(tf_net)
+  #Plot using ggraph (ggplot-based)
+  ggraph(graph, layout = 'stress') +
+    geom_edge_link(aes(alpha = 0.5,edge_colour=tf_to_plot$Direction ), show.legend = FALSE, arrow = arrow(length = unit(4, 'mm'))) +
+    geom_node_point(size = 5, color = 'steelblue') +
+    geom_node_text(aes(label = name), repel = TRUE, size = 4) +
+    scale_color_manual(values = c("TRUE" = "darkred", "FALSE" = "grey70")) +
+    
+    theme_void()
+  
+}
+
+
+
+
+
+#####
 Seurat_analysis("new_UCC_int",FALSE)
 DE_Multi_Comp("new_UCC_int")
 WT_ONLY_WGCNA("new_UCC_int",1)
@@ -1989,3 +2963,139 @@ PIC_ONLY_WGCNA("UCC_int",1)
 Module_Compare("UCC_int",1,1)
 Mod_Check("UCC_int",1,300)
 
+
+Seurat_analysis("new_URN_int",FALSE)
+DE_Multi_Comp("new_URN_int")
+WT_ONLY_WGCNA("new_URN_int",1)
+
+
+# set random seed, k nearest neighbors parameter and network type for reproducibility
+set.seed(12345)
+k.parameter<-45
+max_shared<-15
+net.type<-"signed"
+merge_height<-0.15
+deep_split<-2
+mod_size<-40
+
+Attempt_Number<-1
+
+P_parameter_list<-c(k.parameter,max_shared,net.type,Target_name,Attempt_Number,merge_height,deep_split,mod_size)
+
+library(fs)
+J_PIC_ONLY_WGCNA("new_URN_int",1,P_parameter_list)
+PIC_ONLY_WGCNA("new_URN_int",1)
+Module_Compare("new_URN_int",1,1,"Alt")
+Mod_Check("new_URN_int",1,500)
+
+
+
+#post things
+p_seurat_obj<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/UCC_int/PIC_Only_WGCNA/Attempt_1/UCC_intWGCNA_final_PIC_WT_projected_allPIC.rds")
+all_assoc<-data.frame()
+for (i in list.files("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int/Alt_WGCNA/Attempt_1/Module_Fate/",full.names = TRUE)){
+  all_assoc<-rbind(all_assoc,readRDS(i))
+}
+
+all_assoc<-all_assoc %>% dplyr::filter(Pearson_p_value<0.05) %>% group_by(module) %>% arrange(desc(Pearson_R),Pearson_p_value)
+
+summ<-all_assoc %>% group_by(module) %>% distinct(TF_symbol,.keep_all=TRUE)
+
+##Correlating modules to samples using a dot plot
+#getting the MEs
+MEs <- GetMEs(p_seurat_obj, harmonized=FALSE)
+modules <- GetModules(p_seurat_obj)
+mods <- levels(modules$module); mods <- mods[mods != 'grey']
+
+# add MEs to Seurat meta-data:
+p_seurat_obj@meta.data <- cbind(p_seurat_obj@meta.data, MEs)
+
+z<-DotPlot(subset(x=p_seurat_obj,subset=Treatment=="P"), features=mods, group.by = 'Background')
+z <- z +
+  RotatedAxis() +
+  scale_color_gradient2(high='red', mid='grey95', low='blue') +
+  ggtitle(paste0("WT module correlation in PIC Treatment"))
+ggsave(paste0(dataout,"/Figures/Background_Dotplot.png"),width = 10, height=5)
+
+#FIGURE MODDING#####
+pic_all_obj<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int/Alt_WGCNA/Attempt_1/new_URN_intWGCNA_final_PIC_WT_projected_allPIC.rds")
+MEs <- GetMEs(pic_all_obj, harmonized=FALSE)
+modules <- GetModules(pic_all_obj)
+mods <- levels(modules$module); mods <- mods[mods != 'grey']
+meta<-pic_all_obj@meta.data
+j_only<-subset(pic_all_obj,Background=="J")
+
+
+distances<-list()
+for (i in mods){
+  #finding the mean and standard deviation form the 
+  mod_sd<-sd(j_only@meta.data[,i])
+  mod_mean<-mean(j_only@meta.data[,i])
+  
+  distances[[i]]<-(as.data.frame(meta %>% group_by(Background) %>% summarise(mean(.data[[i]])))[,2]-mod_mean)/mod_sd
+  
+}
+plot_values<-as.data.frame(distances)
+plot_values$origin<-levels(factor(pic_all_obj$Background))
+
+plot_long<-plot_values %>% pivot_longer(cols=-origin, names_to = "Modules", values_to = "Eigengene")
+
+ggplot(plot_long, aes(y = Modules, x = Eigengene)) +
+  geom_vline(
+    aes(xintercept = 0),
+    linetype = "dotted",
+    linewidth = 0.8
+  ) +
+  geom_point(
+    aes(color = origin),
+    size = 3,
+    position = position_jitter(width = 0, height = 0.08)
+  ) +
+  theme_classic() +
+  labs(
+    x = "Z score of eigengene expression, relative to transduced control",
+    y = "Module",
+    color = "origin"
+  )
+
+ggsave("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int/Alt_WGCNA/Attempt_1/Figures/Eigengene_Expression.png")
+
+#PIC_Only plot
+pic_plot<-plot_long %>% filter(Modules %in% PIC_mods, origin!="C") 
+
+ggplot(pic_plot, aes(y = Modules, x = Eigengene)) +
+  geom_vline(
+    aes(xintercept = 0),
+    linetype = "dotted",
+    linewidth = 0.8
+  ) +
+  geom_point(
+    aes(color = origin),
+    size = 3,
+    position = position_jitter(width = 0, height = 0.08)
+  ) +
+  theme_classic() +
+  labs(
+    x = "Z score of eigengene expression, relative to transduced control",
+    y = "Module",
+    color = "origin"
+  )
+
+
+#COmparing literature KLF4 activity to ZSC3 effects on PIC response
+library(readxl)
+KLF4<-read_excel("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int/Seurat_Analysis/PIC_ONLY/KLF4_target.xlsx",skip=1)
+colnames(KLF4)<-c("gene","celltypeA","celltypeB")
+KLF4<-KLF4 %>% mutate(direction=case_when(celltypeA<0.6 & celltypeB< 0.6 ~"Induced", celltypeA>1.5 & celltypeB>1.5~"Inhibited"))
+
+de_3[de_3$gene %in% KLF4$gene,"expression"]
+
+mergedf<-KLF4 %>%
+  left_join(de_3 %>% select(expression, gene), by = "gene")
+
+merge_df<-mergedf %>% dplyr::filter(direction %in% c("Inhibited","Induced"),!is.na(expression))
+
+merge_df %>% group_by(direction,expression) %>%count
+
+###Module preservation######
+asdasdasd

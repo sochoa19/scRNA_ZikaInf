@@ -8,7 +8,7 @@ library(dplyr)
 
 Target_name<-"new_URN_int"
 Attempt_Number1<-1
-Attempt_Number2<-1
+Attempt_Number2<-2
 
 datain<-(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/"))
 
@@ -22,6 +22,11 @@ wt_mods<-GetModules(temp_seur)
 #Read in the seurat object with teh PIC module list
 temp_seur<-readRDS(paste0(datain,"PIC_Only_WGCNA/Attempt_",Attempt_Number2,"/",Target_name,"WGCNA_final_PIC_WT.rds"))
 pic_mods<-GetModules(temp_seur)
+
+#Read in the seurat object with teh PIC module list
+temp_seur<-readRDS(paste0(datain,"All_PIC_WGCNA/Attempt_",Attempt_Number2,"/",Target_name,"WGCNA_final_PIC_WT.rds"))
+all_pic_mods<-GetModules(temp_seur)
+
 
 temp_seur<-NULL
 
@@ -114,7 +119,7 @@ m <- as.matrix(GetAssayData(re_scale_seurat_obj, assay = "RNA", layer = "scale.d
 
 
 ##running for all PIC modules
-dataout<-paste0(datain,"PIC_Only_WGCNA/Attempt_",Attempt_Number2,"/scRegNet/")
+dataout<-paste0(datain,"All_PIC_WGCNA/Attempt_",Attempt_Number2,"/scRegNet/")
 dir_create(paste0(dataout,"Individual_Module_tfs/"),recurse=TRUE)
 
 #initialize the summary list and the neg and pos associated tfs
@@ -122,9 +127,9 @@ all_assoc<-list()
 pos_assoc<-data.frame()
 neg_assoc<-data.frame()
 #iterating over all modules
-for ( i in setdiff(levels(factor(pic_mods$module)),"grey")){
+for ( i in setdiff(levels(factor(all_pic_mods$module)),"grey")){
   
-  mod_list<-pic_mods[pic_mods$module==i,1]
+  mod_list<-all_pic_mods[all_pic_mods$module==i,1]
   
   #get rid of any NA values inside of the module gene list
   mod_list<-mod_list[!is.na(mod_list)]
@@ -139,7 +144,7 @@ for ( i in setdiff(levels(factor(pic_mods$module)),"grey")){
   }
   
   # a message to keep track on what number module you're on
-  print(paste0(which(setdiff(levels(factor(pic_mods$module)),"grey")==i)," out of ", length(setdiff(levels(factor(pic_mods$module)),"grey")==i)))
+  print(paste0(which(setdiff(levels(factor(all_pic_mods$module)),"grey")==i)," out of ", length(setdiff(levels(factor(all_pic_mods$module)),"grey")==i)))
   assoc_tfs<-associate_with_expression(m,mech_tfs,organism="human",gene_id="symbol",method=c("pearson"),q_value = q_value)
   
   assoc_tfs$module<-i
@@ -152,7 +157,10 @@ for ( i in setdiff(levels(factor(pic_mods$module)),"grey")){
 
 }
 
+all_assoc<-all_assoc %>% dplyr::filter(Pearson_p_value<0.05) %>% group_by(module) %>% mutate(Direction= case_when(Pearson_R<0 ~ "Down",Pearson_R>0 ~ "Up")) %>% arrange(desc(Pearson_R),Pearson_p_value)
+
 saveRDS(all_assoc,paste0(dataout,"All_associated_tfs.rds"))
+
 saveRDS(neg_assoc,paste0(dataout,"negative_associated_tfs.rds"))
 saveRDS(pos_assoc,paste0(dataout,"positice_associated_tfs.rds"))
 
@@ -219,7 +227,7 @@ expressed_genes <- rownames(GetAssayData(re_scale_seurat_obj, assay = "RNA", lay
 # a scaled expression matrix
 m <- as.matrix(GetAssayData(re_scale_seurat_obj, assay = "RNA", layer = "scale.data"))
 
-
+j_mods<-all_pic_mods
 
 ##running for all PIC modules
 dataout<-paste0(datain,"Alt_WGCNA/Attempt_",Attempt_Number2,"/scRegNet/")

@@ -37,7 +37,7 @@ library(org.Hs.eg.db)
 
 #Set the name of the Seurat object.rds that you wish to work with. don't include _seur.rds
 
-Target_name<-"new_URN_int"
+Target_name<-"new_URN_int_sct"
 
 Attempt_number<-1
 #IS THIS SEURAT OBJECT UnNORMALIZED?
@@ -2273,6 +2273,445 @@ J_PIC_ONLY_WGCNA<-function(Target_name,Attempt_Number,parameter_list){
 
 
 
+###PIC_ONLY_WGCNA
+ALL_PIC_ONLY_WGCNA<-function(Target_name,Attempt_Number,parameter_list){
+  
+  datain<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Seurat_Analysis")
+  dataout<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/All_PIC_WGCNA/","Attempt_",Attempt_Number)
+  
+  k.parameter<-as.numeric(parameter_list[1])
+  max_shared<-as.numeric(parameter_list[2])
+  net.type<-parameter_list[3]
+  merge_height<-as.numeric(parameter_list[6])
+  deep_split<-as.numeric(parameter_list[7])
+  mod_size<-as.numeric(parameter_list[8])
+  
+  
+  
+  #make sure the data_out folder is still there
+  dir_create(dataout)
+  
+  saveRDS(parameter_list,paste0(dataout,"/Parameter_list.rds"))
+  #make sure the Figure data
+  dir_create(paste0(dataout,"/Figures"))
+  
+  seurat_obj<-readRDS(paste0(datain,"/",Target_name,"_final.rds"))
+  
+  
+  # using the cowplot theme for ggplot
+  theme_set(theme_cowplot())
+  
+  # set random seed, k nearest neighbors parameter and network type for reproducibility
+  set.seed(12345)
+  k.parameter<-45
+  max_shared<-15
+  net.type<-"signed"
+  merge_height<-0.15
+  deep_split<-3
+  mod_size<-60
+  
+  parameter_list<-c(k.parameter,max_shared,net.type,Target_name,Attempt_Number,merge_height,deep_split,mod_size)
+  saveRDS(parameter_list,paste0(dataout,"/Parameter_list.rds"))
+  
+  
+  # optionally enable multithreading
+  enableWGCNAThreads(nThreads = 4)
+  
+
+  
+  ##Create a PIC and CTRL
+  wt_seurat_obj<-subset(seurat_obj, subset= Treatment!="L")
+  
+  
+  #Set up subsetted object for WGCNA
+  wt_seurat_obj <- SetupForWGCNA(
+    wt_seurat_obj,
+    gene_select = "fraction", # the gene selection approach
+    fraction = 0.05, # fraction of cells that a gene needs to be expressed in order to be included
+    wgcna_name = "WT_isolate" # the name of the hdWGCNA experiment
+  )
+  
+  
+  #Creating metacells using the samples as the biosamples
+  #Would it be better to construct them out of the same background. so that LPS, PIC ad CTRL cells can comingle into the same emtacell group? In case some cells in the treated samples remain in a homoeostatic state
+  wt_seurat_obj <- MetacellsByGroups(
+    seurat_obj = wt_seurat_obj,
+    group.by = c("Sample"), # specify the columns in seurat_obj@meta.data to group by
+    reduction = 'pca', # select the dimensionality reduction to perform KNN on
+    k = k.parameter, # nearest-neighbors parameter
+    max_shared = max_shared, # maximum number of shared cells between two metacells
+    ident.group = 'Sample' # set the Idents of the metacell seurat object
+  )
+  
+  
+  # normalize metacell expression matrix:
+  wt_seurat_obj <- NormalizeMetacells(wt_seurat_obj)
+  
+  
+  
+  ##########WGCNA and correlation of modules####
+  #Run hdWGCNA on only the WT cells. THis will allow for the discovery of
+  #expected module response to LPS and PIC
+  wt_seurat_obj <- SetDatExpr(
+    wt_seurat_obj,
+    assay = 'RNA', # using RNA assay
+    layer = 'data' # using normalized data
+  )
+  
+  
+  # Test different soft powers:
+  wt_seurat_obj <- TestSoftPowers(
+    wt_seurat_obj,
+    networkType = net.type # you can also use "unsigned" or "signed hybrid"
+  )
+  
+  # plot the results:
+  plot_list <- PlotSoftPowers(wt_seurat_obj)
+  
+  
+  # assemble with patchwork
+  wrap_plots(plot_list, ncol=2)
+  
+  #Consturct the WGCNA Network
+  wt_seurat_obj <- ConstructNetwork(
+    wt_seurat_obj,
+    networktype=net.type,
+    tom_name = 'J_PIC_isolate' , # name of the topological overlap matrix written to disk
+    #tom_outdir= paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/WGCNA"),
+    deepSplit = deep_split,
+    minModuleSize = mod_size,
+    mergeCutHeight = merge_height,
+    overwrite_tom=TRUE,
+    store_tom_in_seurat=TRUE
+  )
+  PlotDendrogram(wt_seurat_obj, main='WT PIC hdWGCNA Dendrogram')
+  
+  #compute all MEs in the full single-cell dataset
+  wt_seurat_obj <- ModuleEigengenes(
+    wt_seurat_obj
+  )
+  
+  # compute eigengene-based connectivity (kME):
+  wt_seurat_obj <- ModuleConnectivity(wt_seurat_obj)
+  
+  
+  p <- PlotKMEs(wt_seurat_obj, ncol=5)
+  
+  p
+  
+  
+  #plot all module MEs across all cells onto the UMAP
+  plot_list <- ModuleFeaturePlot(
+    wt_seurat_obj,
+    features='MEs', # plot the MEs
+    order=TRUE # order so the points with highest MEs are on top
+  )
+  
+  # stitch together with patchwork
+  wrap_plots(plot_list, ncol=6)
+  ggsave(paste0(dataout,"/Figures/ModuleUMAP.png"),width=10,height=8)
+  
+  
+  ##correlelogram to check module correlation
+  ModuleCorrelogram(wt_seurat_obj,features="MEs")
+  
+  
+  
+  ##Correlating modules to samples using a dot plot
+  #getting the MEs
+  MEs <- GetMEs(wt_seurat_obj, harmonized=FALSE)
+  modules <- GetModules(wt_seurat_obj)
+  mods <- levels(modules$module); mods <- mods[mods != 'grey']
+  
+  # add MEs to Seurat meta-data:
+  wt_seurat_obj@meta.data <- cbind(wt_seurat_obj@meta.data, MEs)
+  
+  z<-DotPlot(subset(x=wt_seurat_obj,subset=Treatment=="P"), features=mods, group.by = 'Background')
+  z <- z +
+    RotatedAxis() +
+    scale_color_gradient2(high='red', mid='grey95', low='blue') +
+    ggtitle(paste0("PIC&CTRL correlation in PIC Treatment"))
+  ggsave(paste0(dataout,"/Figures/Background_Dotplot.png"),width = 10, height=5)
+  
+  
+  
+  z<-DotPlot(subset(x=wt_seurat_obj,subset=Treatment=="C"), features=mods, group.by = 'Background')
+  z <- z +
+    RotatedAxis() +
+    scale_color_gradient2(high='red', mid='grey95', low='blue') +
+    ggtitle(paste0("WT module correlation in CTRL Treatment"))
+  
+  z
+  
+  
+  #######RUNNING GO on the modules and on the genes with kme above 0.5
+  library(clusterProfiler)
+  library(AnnotationDbi)
+  library(org.Hs.eg.db)
+  
+  #get modules from wild type isolate reference seurat object
+  modules<-GetModules(wt_seurat_obj)
+  mods <- levels(modules$module); mods <- mods[mods != 'grey']
+  
+  
+  #Compiles entrez ids for the universe of possible gene
+  universe.symb <- bitr(
+    modules$gene_name,
+    fromType = "SYMBOL",
+    toType = "ENTREZID",
+    OrgDb = org.Hs.eg.db
+  )
+  
+  #takes any genes still in ENSEMBL format and converts them into entrez ids. HIGH ERROR RATE LOOK INTO IT!
+  universe.ensembl <- bitr(
+    modules[grepl("ENSG",modules$gene_name),1],
+    fromType = "ENSEMBL",
+    toType = "ENTREZID",
+    OrgDb = org.Hs.eg.db
+  )
+  
+  
+  univ.combined<-append(universe.symb$ENTREZID, universe.ensembl$ENTREZID)
+  
+  #
+  
+  #loop for creating GO BP terms dot plots
+  #initialize a list to populate with modules with no significant GO terms
+  noGO<-list()
+  
+  topGO<-list()
+  
+  ontol<-"CC" #This can be changed depending on what ontology database you want to use
+  dir_create(paste0(dataout, "/Figures/GO/",ontol),recurse=TRUE)
+  
+  for (i in mods){
+    
+    currcolor<-i #sets the name of the module to be put through GO enrichment analysis
+    genelist<-modules[modules$color==currcolor,1] #populates genelist with all the genes that make up this module
+    
+    #Convert all the gene symbols into entrez ids. 
+    gene.symb <- bitr(
+      genelist,
+      fromType = "SYMBOL",
+      toType = "ENTREZID",
+      OrgDb = org.Hs.eg.db
+    )
+    
+    #Checks to see if any of the ENSEMBL ids in the module can be converted. If not skip conversion 
+    if (length(grep(paste(genelist[grepl("ENSG",genelist)],collapse="|"),keys(org.Hs.eg.db, keytype = "ENSEMBL")))==0
+    ){
+      gene.combined<-gene.symb$ENTREZID
+      
+    }else{
+      gene.ensembl<- bitr(
+        genelist[grepl("ENSG",genelist)],
+        fromType= "ENSEMBL",
+        toType = "ENTREZID",
+        OrgDb = org.Hs.eg.db
+        
+      )
+      
+      gene.combined <-append(gene.symb$ENTREZID,gene.ensembl$ENTREZID) #combine symbol->entrez and ensembl->entrez
+      
+    }
+    
+    
+    qcutoff=0.05 #sets the qvalue cutoff to be used in GO enrichment 0.05 is standard
+    #GO enrichment 
+    ego <- enrichGO(
+      gene = gene.combined,
+      universe = univ.combined,
+      OrgDb = org.Hs.eg.db,
+      keyType = "ENTREZID",
+      ont = ontol, #This can be changed depending on what ontology database you want to use
+      readable = TRUE,
+      qvalueCutoff = qcutoff
+      
+    )
+    #if there are no GO enrichment results that pass the qvalue cutoff add the module name to noGO list
+    if(sum(ego@result$qvalue<=qcutoff)==0){
+      print(paste0("The ",currcolor, " module does not have any significant terms associated to it"))
+      noGO<-append(noGO,currcolor)
+      next
+    }
+    #create a dotplot of the 10 most significant enriched terms for that module
+    dotplot(ego, showCategory = 10)+
+      ggtitle(paste0(ontol,"GO enrichment of ", currcolor, " module"))
+    ggsave(paste0(dataout,"/Figures/GO/",ontol,"/",currcolor,"_GO.png"),height=1800,width=2200,units= "px", dpi= 300)
+    topGO<-append(topGO,paste(head(ego@result$Description,n=5),collapse=","))
+  }
+  capture.output(noGO,file = paste0(dataout,"/Figures/GO/",ontol,"/nonSigModules.txt"))
+  
+  
+  
+  #saving out the fully anlayzed wt_seruat object _in this case the PIC_WT_
+  saveRDS(wt_seurat_obj,paste0(dataout,"/",Target_name,"WGCNA_final_PIC_WT.rds"))
+  
+  #saving the WGCNA projection onto ahe all PIC subset
+  saveRDS(p_seurat_obj,paste0(dataout,"/",Target_name,"WGCNA_final_PIC_WT_projected_allPIC.rds"))
+  
+  #Module DE####
+  
+  
+  # set up an empty dataframe for the DMEs
+  DMEs <- data.frame()
+  
+  # loop through the clusters
+  for(cur_sample in setdiff(levels(factor(wt_seurat_obj$Sample)),"ZSCJP")){
+    
+    # identify barcodes for group1 and group2 in eadh cluster
+    group1 <- wt_seurat_obj@meta.data %>% subset(Sample == "ZSCJP") %>% rownames
+    group2 <- wt_seurat_obj@meta.data %>% subset(Sample == cur_sample) %>% rownames
+    
+    # run the DME test
+    cur_DMEs <- FindDMEs(
+      wt_seurat_obj,
+      barcodes1 = group1,
+      barcodes2 = group2,
+      test.use='wilcox',
+      pseudocount.use=0.01, # we can also change the pseudocount with this param
+      wgcna_name = 'WT_isolate',
+      logfc.threshold = 1
+      
+    )
+    
+    # add the cluster info to the table
+    cur_DMEs$sample <- cur_sample
+    
+    # append the table
+    DMEs <- rbind(DMEs, cur_DMEs)
+  }
+  
+  ###PLOT THE DME as heatmap
+  # get the modules table:
+  modules <- GetModules(wt_seurat_obj)
+  mods <- levels(modules$module); mods <- mods[mods != 'grey']
+  
+  # make a copy of the DME table for plotting
+  plot_df <- DMEs
+  
+  # set the factor level for the modules so they plot in the right order:
+  plot_df$module <- factor(as.character(plot_df$module), levels=mods)
+  
+  # set a min/max threshold for plotting
+  maxval <- 10; minval <- -10
+  plot_df$avg_log2FC <- ifelse(plot_df$avg_log2FC > maxval, maxval, plot_df$avg_log2FC)
+  plot_df$avg_log2FC <- ifelse(plot_df$avg_log2FC < minval, minval, plot_df$avg_log2FC)
+  
+  # add significance levels
+  plot_df$Significance <- gtools::stars.pval(plot_df$p_val_adj)
+  
+  # change the text color to make it easier to see 
+  plot_df$textcolor <- ifelse(plot_df$avg_log2FC > 5, 'black', 'white')
+  
+  # make the heatmap with geom_tile
+  p <- plot_df %>% 
+    ggplot(aes(y=sample, x=module, fill=avg_log2FC)) +
+    geom_tile() 
+  
+  # add the significance levels
+  p <- p + 
+    geom_text(label=plot_df$Significance, color=plot_df$textcolor) 
+  
+  # customize the color and theme of the plot
+  p <- p + 
+    scale_fill_gradient2(low='purple', mid='black', high='yellow') +
+    RotatedAxis() +
+    theme(
+      panel.border = element_rect(fill=NA, color='black', size=1),
+      axis.line.x = element_blank(),
+      axis.line.y = element_blank(),
+      plot.margin=margin(0,0,0,0)
+    ) + xlab('') + ylab('') +
+    coord_equal()
+  p
+  
+  
+ #module expression scores
+  wt_seurat_obj <- ModuleExprScore(
+    wt_seurat_obj,
+    n_genes = 25,
+    method='UCell'
+  )
+  
+  
+  
+  # set up an empty dataframe for the DMSs
+  DMSs <- data.frame()
+  
+  # loop through the clusters
+  for(cur_sample in setdiff(levels(factor(wt_seurat_obj$Sample)),"ZSCJP")){
+    
+    # identify barcodes for group1 and group2 in eadh cluster
+    group1 <- wt_seurat_obj@meta.data %>% subset(Sample == "ZSCJP") %>% rownames
+    group2 <- wt_seurat_obj@meta.data %>% subset(Sample == cur_sample) %>% rownames
+    
+    # run the DME test
+    cur_DMSs <- FindDMEs(
+      wt_seurat_obj,
+      barcodes1 = group1,
+      barcodes2 = group2,
+      test.use='wilcox',
+      features = "ModuleScores",
+      wgcna_name = 'WT_isolate',
+    )
+    
+    # add the cluster info to the table
+    cur_DMSs$sample <- cur_sample
+    
+    # append the table
+    DMSs <- rbind(DMSs, cur_DMSs)
+  }
+  
+  ###PLOT THE DME as heatmap
+  # get the modules table:
+  modules <- GetModules(wt_seurat_obj)
+  mods <- levels(modules$module); mods <- mods[mods != 'grey']
+  
+  # make a copy of the DME table for plotting
+  plot_df <- DMSs
+  
+  # set the factor level for the modules so they plot in the right order:
+  plot_df$module <- factor(as.character(plot_df$module), levels=mods)
+  
+  # set a min/max threshold for plotting
+  maxval <- 1; minval <- -1
+  plot_df$avg_log2FC <- ifelse(plot_df$avg_log2FC > maxval, maxval, plot_df$avg_log2FC)
+  plot_df$avg_log2FC <- ifelse(plot_df$avg_log2FC < minval, minval, plot_df$avg_log2FC)
+  
+  # add significance levels
+  plot_df$Significance <- gtools::stars.pval(plot_df$p_val_adj)
+  
+  # change the text color to make it easier to see 
+  plot_df$textcolor <- ifelse(plot_df$avg_log2FC > 0.5, 'black', 'white')
+  
+  # make the heatmap with geom_tile
+  p <- plot_df %>% 
+    ggplot(aes(y=sample, x=module, fill=avg_log2FC)) +
+    geom_tile() 
+  
+  # add the significance levels
+  p <- p + 
+    geom_text(label=plot_df$Significance, color=plot_df$textcolor) 
+  
+  # customize the color and theme of the plot
+  p <- p + 
+    scale_fill_gradient2(low='purple', mid='black', high='yellow') +
+    RotatedAxis() +
+    theme(
+      panel.border = element_rect(fill=NA, color='black', size=1),
+      axis.line.x = element_blank(),
+      axis.line.y = element_blank(),
+      plot.margin=margin(0,0,0,0)
+    ) + xlab('') + ylab('') +
+    coord_equal()
+  p
+   
+}
+
+
+
+
 
 
 
@@ -2978,6 +3417,7 @@ merge_height<-0.15
 deep_split<-2
 mod_size<-40
 
+Target_name<-"new_URN_int"
 Attempt_Number<-1
 
 P_parameter_list<-c(k.parameter,max_shared,net.type,Target_name,Attempt_Number,merge_height,deep_split,mod_size)
@@ -2987,6 +3427,8 @@ J_PIC_ONLY_WGCNA("new_URN_int",1,P_parameter_list)
 PIC_ONLY_WGCNA("new_URN_int",1)
 Module_Compare("new_URN_int",1,1,"Alt")
 Mod_Check("new_URN_int",1,500)
+ALL_PIC_ONLY_WGCNA("new_URN_int",1,P_parameter_list)
+
 
 
 

@@ -34,7 +34,7 @@ library(org.Hs.eg.db)
 #Recreating Figures
 dataout<-"/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int/Paper_Figures"
 
-
+base=2
 
 #Figure 1 B ####
 
@@ -53,13 +53,13 @@ WT_PIC_GENES<-head(WT[WT_PIC,],10)
 
 
 volcano<-ggplot(WT, aes(x = avg_log2FC, y = -log10(p_val_adj), color = expression)) +
-  geom_point(alpha = 0.8, size = 2) +
+  geom_point(alpha = 0.8, size = base/4) +
   scale_color_manual(values = c("Down" = "blue", "NS" = "grey", "Up" = "red"),
                      labels =c("Downregulated", "Not Significant", "Upregulated") ) +
   
   # Threshold lines
-  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black") +
-  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black",linewidth=base/7) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black",linewidth=base/7) +
   expand_limits(y = -log10(320))+
   
   
@@ -68,25 +68,31 @@ volcano<-ggplot(WT, aes(x = avg_log2FC, y = -log10(p_val_adj), color = expressio
     data = WT_PIC_GENES,
     aes(label = gene),
     color = "black",
-    size = 3
+    size = base*0.8
   ) +
   
+  scale_x_continuous(breaks = seq(-4,8, by = 2), limits=c(-4,8)) +
+
+  scale_y_continuous(breaks = seq(0, 320, by = 100), limits=c(0,330)) +
   # Formatting
   labs(
-    title = "DE of WT-PIC against WT-CTRL baseline",
+    title = "WT-PIC against WT-CTRL",
     x = "Log2 Fold Change",
     y = "-Log10 p-value-adj",
     color = ""
   ) +
   theme_cowplot( )+
-  theme(legend.text = element_text(size = 8, color = "black"),
-        axis.title.x= element_text(size=11,color="black"),
-        axis.title.y= element_text(size=11,color="black"),
-        plot.title = element_text(size=11,color="black",hjust=0.5,face="plain"),
-        axis.text = element_text(size=10)
+  theme(legend.text = element_text(size = base, color = "black"),
+        legend.position = "none",
+        axis.title.x= element_text(size=base*4,color="black"),
+        axis.line = element_line(colour = 'black', size = base/7),
+        axis.ticks = element_line(size=base/7),
+        axis.title.y= element_text(size=base*4,color="black"),
+        plot.title = element_text(size=base*5,color="black",hjust=1,face="plain"),
+        axis.text = element_text(size=base*2)
         )
 volcano
-ggsave(paste0(dataout,"/fig1B.png"), width = 5, height = 4, dpi = 300)
+ggsave(paste0(dataout,"/fig1B.png"), width = base, height = base, units="in",dpi = 300)
 
 
 
@@ -103,13 +109,19 @@ NS_PIC_GENES<-head(NS[NS_PIC,],10)
 
 
 volcano<-ggplot(NS, aes(x = avg_log2FC, y = -log10(p_val_adj), color = expression)) +
-  geom_point(alpha = 0.8, size = 2) +
+  geom_point(alpha = 0.8, size = base/4) +
   scale_color_manual(values = c("Down" = "blue", "NS" = "grey", "Up" = "red"),
                      labels =c("Downregulated", "Not Significant", "Upregulated") ) +
   
+  #axes limits
+  scale_x_continuous(breaks = seq(-4,8, by = 2), limits=c(-4,8)) +
+  
+  scale_y_continuous(breaks = seq(0, 320, by = 100), limits=c(0,330)) +
+  
+  
   # Threshold lines
-  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black") +
-  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black",linewidth=base/7) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black",linewidth=base/7) +
   expand_limits(y = -log10(320))+
   
   
@@ -118,25 +130,28 @@ volcano<-ggplot(NS, aes(x = avg_log2FC, y = -log10(p_val_adj), color = expressio
     data = NS_PIC_GENES,
     aes(label = gene),
     color = "black",
-    size = 3
+    size = base*0.8
   ) +
   
   # Formatting
   labs(
-    title = "DE of NS2b-PIC against NS2b-CTRL baseline",
+    title = "NS2b-PIC against NS2b-CTRL",
     x = "Log2 Fold Change",
     y = "-Log10 p-value-adj",
     color = ""
   ) +
   theme_cowplot( )+
-  theme(legend.text = element_text(size = 8, color = "black"),
-        axis.title.x= element_text(size=11,color="black"),
-        axis.title.y= element_text(size=11,color="black"),
-        plot.title = element_text(size=11,color="black",hjust=0.5,face="plain"),
-        axis.text = element_text(size=10)
+  theme(legend.text = element_text(size = base, color = "black"),
+        legend.position = "none",
+        axis.title.x= element_text(size=base*4,color="black"),
+        axis.line = element_line(colour = 'black', size = base/7),
+        axis.ticks = element_line(size=base/7),
+        axis.title.y= element_text(size=base*4,color="black"),
+        plot.title = element_text(size=base*5,color="black",hjust=1,face="plain"),
+        axis.text = element_text(size=base*2)
   )
 volcano
-ggsave(paste0(dataout,"/fig1C.png"), width = 5, height = 4, dpi = 300)
+ggsave(paste0(dataout,"/fig1C.png"), width = base, height = base, units="in", dpi = 300)
 
 
 
@@ -146,17 +161,24 @@ ggsave(paste0(dataout,"/fig1C.png"), width = 5, height = 4, dpi = 300)
 #Figure 1 D ####
 Seur_target<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int/Seurat_Analysis/new_URN_int_final.rds")
 
-DimPlot(Seur_target, reduction = "umap",group.by="Treatment",label=FALSE)+
+DimPlot(Seur_target, reduction = "umap",group.by="Treatment",label=FALSE,stroke.size=base/20)+
   labs(title="")+
+  
   scale_color_discrete(labels =c("C"= "CTRL", "L"="LPS", "P"="PIC"))+
   theme_cowplot( )+
-  theme(legend.text = element_text(size = 8, color = "black"),
-        axis.title.x= element_text(size=11,color="black"),
-        axis.title.y= element_text(size=11,color="black"),
-        plot.title = element_text(size=11,color="black",hjust=0.5,face="plain"),
-        axis.text = element_text(size=10)
+  guides(color = guide_legend(override.aes = list(size = base/2)))+
+  theme(legend.text = element_text(size = base*2, color = "black"),
+        plot.margin = unit(c(0, 0, 0, 0), "null"),
+        axis.title.x= element_text(size=base*4,color="black"),
+        legend.key.size = unit(0.2,"line"),
+        legend.box.spacing = unit(0, "pt"),
+        axis.line = element_line(colour = 'black', size = base/7),
+        axis.ticks = element_line(size=base/7),
+        axis.title.y= element_text(size=base*4,color="black"),
+        plot.title = element_blank(),
+        axis.text = element_text(size=base*2)
   )
-ggsave(paste0(dataout,"/fig1D.png"),width=5,height=5,dpi=300)
+ggsave(paste0(dataout,"/fig1D.png"),width=base,height=base,unit="in",dpi=300)
 
 
 
@@ -176,16 +198,22 @@ Seur_target$Background<-replace_values(Seur_target$Background,
                                           "12"~"NS5",
                                           "J"~"GFP",)
 
-DimPlot(Seur_target, reduction = "umap",group.by="Background",label=FALSE)+
+DimPlot(Seur_target, reduction = "umap",group.by="Background",label=FALSE,stroke.size = base/20)+
   labs(title="")+
   theme_cowplot( )+
-  theme(legend.text = element_text(size = 8, color = "black"),
-        axis.title.x= element_text(size=11,color="black"),
-        axis.title.y= element_text(size=11,color="black"),
-        plot.title = element_text(size=11,color="black",hjust=0.5,face="plain"),
-        axis.text = element_text(size=10)
+  guides(color = guide_legend(override.aes = list(size = base/2)))+
+  theme(legend.text = element_text(size = base*2, color = "black"),
+        plot.margin = unit(c(0, 0, 0, 0), "null"),
+        axis.title.x= element_text(size=base*4,color="black"),
+        legend.key.size = unit(0.2,"line"),
+        legend.box.spacing = unit(0, "pt"),
+        axis.line = element_line(colour = 'black', size = base/7),
+        axis.ticks = element_line(size=base/7),
+        axis.title.y= element_text(size=base*4,color="black"),
+        plot.title = element_blank(),
+        axis.text = element_text(size=base*2)
   )
-ggsave(paste0(dataout,"/fig1E.png"),width=5,height=5,dpi=300)
+ggsave(paste0(dataout,"/fig1E.png"),width=base,height=base,dpi=300)
 
 
 
@@ -200,39 +228,43 @@ WT[WT$p_val_adj==0,"p_val_adj"]<-1*10^-302
 
 
 volcano<-ggplot(WT, aes(x = avg_log2FC, y = -log10(p_val_adj), color = expression)) +
-  geom_point(alpha = 0.8, size = 2) +
+  geom_point(alpha = 0.8, size = base/4) +
   scale_color_manual(values = c("Down" = "blue", "NS" = "grey", "Up" = "red"),
                      labels =c("Downregulated", "Not Significant", "Upregulated") ) +
   
+  #axes limits
+  scale_x_continuous(breaks = seq(-6,8, by = 2), limits=c(-6,8)) +
+  
+  scale_y_continuous(breaks = seq(0, 320, by = 100), limits=c(0,330)) +
+  
+  
   # Threshold lines
-  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black") +
-  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black",linewidth=base/7) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black",linewidth=base/7) +
   expand_limits(y = -log10(320))+
   
-  #Labelling the top 10 genes
-  geom_text_repel(
-    data = head(WT[WT$expression != "NS", ][order(WT[WT$expression != "NS", ]$p_val_adj),],10),
-    aes(label = gene),
-    color = "black",
-    size = 3
-  ) +
+  
+  
   
   # Formatting
   labs(
-    title = "DE of GFP-PIC against WT-PIC baseline",
+    title = "GFP-PIC against WT-PIC",
     x = "Log2 Fold Change",
     y = "-Log10 p-value-adj",
     color = ""
   ) +
   theme_cowplot( )+
-  theme(legend.text = element_text(size = 8, color = "black"),
-        axis.title.x= element_text(size=11,color="black"),
-        axis.title.y= element_text(size=11,color="black"),
-        plot.title = element_text(size=11,color="black",hjust=0.5,face="plain"),
-        axis.text = element_text(size=10)
+  theme(legend.text = element_text(size = base, color = "black"),
+        legend.position = "none",
+        axis.title.x= element_text(size=base*4,color="black"),
+        axis.line = element_line(colour = 'black', size = base/7),
+        axis.ticks = element_line(size=base/7),
+        axis.title.y= element_text(size=base*4,color="black"),
+        plot.title = element_text(size=base*5,color="black",hjust=1,face="plain"),
+        axis.text = element_text(size=base*2)
   )
 volcano
-ggsave(paste0(dataout,"/fig1F.png"), width = 5, height = 4, dpi = 300)
+ggsave(paste0(dataout,"/fig1F.png"), width = base, height = base,units = "in", dpi = 300)
 
 
 
@@ -252,40 +284,49 @@ NS<-vsP_DE[["3"]]
 NS[NS$p_val_adj==0,"p_val_adj"]<-1*10^-302
 
 
+NS_PIC<-grepl("ISG|IFIT|OAS|CCL",NS[NS$expression != "NS", ][order(NS[NS$expression != "NS", ]$p_val_adj), "gene"])
+NS_PIC_GENES<-head(NS[NS_PIC,],10)
+
+
 volcano<-ggplot(NS, aes(x = avg_log2FC, y = -log10(p_val_adj), color = expression)) +
-  geom_point(alpha = 0.8, size = 2) +
+  geom_point(alpha = 0.8, size = base/4) +
   scale_color_manual(values = c("Down" = "blue", "NS" = "grey", "Up" = "red"),
                      labels =c("Downregulated", "Not Significant", "Upregulated") ) +
   
+  #axes limits
+  scale_x_continuous(breaks = seq(-6,8, by = 2), limits=c(-6,8)) +
+  
+  scale_y_continuous(breaks = seq(0, 320, by = 100), limits=c(0,330)) +
+  
+  
+  
   # Threshold lines
-  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black") +
-  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black",linewidth=base/7) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black",linewidth=base/7) +
   expand_limits(y = -log10(320))+
   
-  #Labelling the top 10 genes
-  geom_text_repel(
-    data = head(NS[NS$expression != "NS", ][order(NS[NS$expression != "NS", ]$p_val_adj),][!grepl("ENSG0", NS$gene),],10),
-    aes(label = gene),
-    color = "black",
-    size = 3
-  ) +
+  
+  
   
   # Formatting
   labs(
-    title = "DE of NS2b-PIC against WT-PIC baseline",
+    title = "NS2b-PIC against WT-PIC",
     x = "Log2 Fold Change",
     y = "-Log10 p-value-adj",
     color = ""
   ) +
   theme_cowplot( )+
-  theme(legend.text = element_text(size = 8, color = "black"),
-        axis.title.x= element_text(size=11,color="black"),
-        axis.title.y= element_text(size=11,color="black"),
-        plot.title = element_text(size=11,color="black",hjust=0.5,face="plain"),
-        axis.text = element_text(size=10)
+  theme(legend.text = element_text(size = base, color = "black"),
+        legend.position = "none",
+        axis.title.x= element_text(size=base*4,color="black"),
+        axis.line = element_line(colour = 'black', size = base/7),
+        axis.ticks = element_line(size=base/7),
+        axis.title.y= element_text(size=base*4,color="black"),
+        plot.title = element_text(size=base*5,color="black",hjust=1,face="plain"),
+        axis.text = element_text(size=base*2)
   )
 volcano
-ggsave(paste0(dataout,"/fig1G.png"), width = 5, height = 4, dpi = 300)
+ggsave(paste0(dataout,"/fig1G.png"), width = base, height = base, units="in", dpi = 300)
 
 
 
@@ -296,7 +337,7 @@ ggsave(paste0(dataout,"/fig1G.png"), width = 5, height = 4, dpi = 300)
 
 #Figure 2B ####
 WT_WGCNA<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int/Isolate_WGCNA/Attempt_1/new_URN_intWGCNA_final_WTonly_projected.rds")
-MEs<-WT_WGCNA@meta.data %>% arrange(Treatment) %>% filter(Background=="C")
+MEs<-WT_WGCNA@meta.data %>% arrange(Treatment) %>% dplyr::filter(Background=="C")
 MEs$Cell<-seq_along(rownames(MEs))
 
 MEs_long <- MEs %>%
@@ -436,7 +477,7 @@ ggplot(MEs_long, aes(
   
   coord_cartesian(clip = "off")+
   #facet_wrap(~ turquoise, scales = "free_y") +
-  theme_classic() +
+  theme_cowplot() +
   theme(
     axis.text.x = element_blank(),
     axis.ticks.x = element_blank(),
@@ -453,7 +494,7 @@ ggplot(MEs_long, aes(
     
     # Make room for module labels and right-side axes
     plot.margin = margin(
-      10, 10, 10, 50)
+      5, 10, 5, 30)
   ) +
   labs(
     x = NULL,
@@ -461,7 +502,7 @@ ggplot(MEs_long, aes(
     color = NULL,
     title = "Module Activity in WT cells"
   )
-ggsave(paste0(dataout,"/fig2B.png"), width = 6, height = 3, dpi = 300)
+ggsave(paste0(dataout,"/fig2B.png"), width = base*2, height = base, units="in", dpi = 300)
 
 
 
@@ -497,7 +538,7 @@ module_colors<-gsub("black","grey40",module_colors)
 
 
 
-ggplot(data=alluvial_data,
+ggplot(data=alluvial_data_grey,
        aes(axis1=WT_Modules,axis2=PIC_Modules,y=n))+
   geom_alluvium(aes(fill=WT_Modules),width=1/5)+
   geom_stratum(
@@ -542,12 +583,16 @@ ggsave(paste0(dataout,"/fig2D.png"),height=8,width=6,dpi=300)
 
 
 #Figure 3A####
-pic_all_obj<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int/Alt_WGCNA/Attempt_1/new_URN_intWGCNA_final_PIC_WT_projected_allPIC.rds")
+pic_all_obj<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int/All_PIC_WGCNA/Attempt_1/new_URN_intWGCNA_final_PIC_WT.rds")
+
+
 MEs <- GetMEs(pic_all_obj, harmonized=FALSE)
 modules <- GetModules(pic_all_obj)
+pic_all_obj<-AddMetaData(pic_all_obj,MEs)
 mods <- levels(modules$module); mods <- mods[mods != 'grey']
 meta<-pic_all_obj@meta.data
-j_only<-subset(pic_all_obj,Background=="J")
+j_only<-subset(pic_all_obj,Sample=="ZSCJP")
+#j_only<-subset(pic_all_obj,Background=="J")
 
 
 distances<-list()
@@ -556,13 +601,18 @@ for (i in mods){
   mod_sd<-sd(j_only@meta.data[,i])
   mod_mean<-mean(j_only@meta.data[,i])
   
-  distances[[i]]<-(as.data.frame(meta %>% group_by(Background) %>% summarise(mean(.data[[i]])))[,2]-mod_mean)/mod_sd
+ # distances[[i]]<-(as.data.frame(meta %>% group_by(Background) %>% summarise(mean(.data[[i]])))[,2]-mod_mean)/mod_sd
+  distances[[i]]<-(as.data.frame(meta %>% group_by(Sample) %>% summarise(mean(.data[[i]])))[,2]-mod_mean)/mod_sd
   
 }
 plot_values<-as.data.frame(distances)
-plot_values$origin<-levels(factor(pic_all_obj$Background))
+#plot_values$origin<-levels(factor(pic_all_obj$Background))
+plot_values$origin<-levels(factor(pic_all_obj$Sample))
 
 plot_long<-plot_values %>% pivot_longer(cols=-origin, names_to = "Modules", values_to = "Eigengene")
+
+plot_long$Treatment<-str_sub(gsub("ZSC","",plot_long$origin),-1,-1) 
+plot_long$Background<-str_sub(gsub("ZSC","",plot_long$origin),1,-2) 
 
 #change background values to the right thing
 plot_long$origin<-replace_values(plot_long$origin, 
@@ -576,7 +626,9 @@ plot_long$origin<-replace_values(plot_long$origin,
                                        "J"~"GFP-PIC",)
 
 #remove the the GFP sample
-plot_long<-plot_long %>% dplyr::filter(origin!="GFP-PIC")
+#plot_long<-plot_long %>% dplyr::filter(origin!="GFP-PIC")
+plot_long<-plot_long %>% dplyr::filter(Background!="J")
+
 
 ggplot(plot_long, aes(y = Modules, x = Eigengene)) +
   geom_vline(
@@ -597,7 +649,8 @@ ggplot(plot_long, aes(y = Modules, x = Eigengene)) +
     color="red"
   ) +
   geom_point(
-    aes(color = origin),
+    aes(color = Background,shape=Treatment),
+    #aes(color = origin)
     size = 3,
     position = position_jitter(width = 0, height = 0.08)
   ) +

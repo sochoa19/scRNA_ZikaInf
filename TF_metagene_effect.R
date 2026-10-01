@@ -29,7 +29,7 @@ library(Matrix)
 library(stringr)
 
 #1. Finding KLF targets in the brown yellow and blue modules
-all_tfs<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int/Alt_WGCNA/Attempt_1/scRegNet/All_associated_tfs.rds")
+all_tfs<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int/ALL_PIC_WGCNA/Attempt_2/scRegNet/All_associated_tfs.rds")
 all_tfs<-all_tfs %>% dplyr::filter(Pearson_q_value < 0.05)
 #susbetting the scREGNET results just to the module desired
 yellow_tf<-all_tfs %>% dplyr::filter(module=="yellow")

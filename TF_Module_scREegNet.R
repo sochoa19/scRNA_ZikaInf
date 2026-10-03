@@ -6,9 +6,9 @@ library(EnsDb.Hsapiens.v86)
 library(fs)
 library(dplyr)
 
-Target_name<-"new_URN_int"
+Target_name<-"new_URN_int_sct"
 Attempt_Number1<-1
-Attempt_Number2<-2
+Attempt_Number2<-1
 
 datain<-(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/"))
 

@@ -1436,6 +1436,7 @@ All_PIC_CTRL_WGCNA<-function(Target_name,Attempt_number,parameter_list){
     coord_equal()
   p
   
+  sub_seurat_obj<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int_sct/All_PIC_WGCNA/Attempt_1/new_URN_int_sctWGCNA_final_PIC_WT.rds")
   
   #module expression scores
   sub_seurat_obj <- ModuleExprScore(
@@ -1463,7 +1464,8 @@ All_PIC_CTRL_WGCNA<-function(Target_name,Attempt_number,parameter_list){
       barcodes2 = group2,
       test.use='wilcox',
       features = "ModuleScores",
-      wgcna_name = 'sub_isolate',
+      wgcna_name = 'sub_isolate'
+
     )
     
     # add the cluster info to the table
@@ -1485,7 +1487,7 @@ All_PIC_CTRL_WGCNA<-function(Target_name,Attempt_number,parameter_list){
   plot_df$module <- factor(as.character(plot_df$module), levels=mods)
   
   # set a min/max threshold for plotting
-  maxval <- 1; minval <- -1
+  maxval <- 2; minval <- -2
   plot_df$avg_log2FC <- ifelse(plot_df$avg_log2FC > maxval, maxval, plot_df$avg_log2FC)
   plot_df$avg_log2FC <- ifelse(plot_df$avg_log2FC < minval, minval, plot_df$avg_log2FC)
   
@@ -1524,5 +1526,583 @@ All_PIC_CTRL_WGCNA<-function(Target_name,Attempt_number,parameter_list){
 
 }
 
+###sc_REgNet
+#scRegNet tests
+
+library(Seurat)
+library(scRegNet)
+library(EnsDb.Hsapiens.v86)
+library(fs)
+library(dplyr)
+
+Target_name<-"new_URN_int_sct"
+Attempt_Number1<-1
+Attempt_Number2<-1
+
+datain<-(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/"))
+
+seurat_obj<-readRDS(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"_seur.rds"))
 
 
+#read in the seurat object with the WT module list
+temp_seur<-readRDS(paste0(datain,"Isolate_WGCNA/Attempt_",Attempt_Number1,"/",Target_name,"WGCNA_final_WTonly.rds"))
+wt_mods<-GetModules(temp_seur)
+
+#Read in the seurat object with teh PIC module list
+temp_seur<-readRDS(paste0(datain,"All_PIC_WGCNA/Attempt_",Attempt_Number2,"/",Target_name,"WGCNA_final_PIC_WT.rds"))
+all_pic_mods<-GetModules(temp_seur)
+
+
+temp_seur<-NULL
+
+###use all gens from teh seurat, take it before you subset for highly variable genes!
+#only do pearson correlation
+
+#How Should I subset my seurat object pull 
+
+re_scale_seurat_obj <- ScaleData(seurat_obj,features=rownames(seurat_obj))
+
+
+# all genes from the assay
+expressed_genes <- rownames(GetAssayData(re_scale_seurat_obj, assay = "SCT", layer = "data"))
+
+# a scaled expression matrix
+m <- as.matrix(GetAssayData(re_scale_seurat_obj, assay = "SCT", layer = "scale.data"))
+
+
+##running for all WT modules
+dataout<-paste0(datain,"Isolate_WGCNA/Attempt_",Attempt_Number1,"/scRegNet/")
+dir_create(paste0(dataout,"Individual_Module_tfs/"),recurse=TRUE)
+
+#initialize the summary list and the neg and pos associated tfs
+all_assoc<-list()
+pos_assoc<-data.frame()
+neg_assoc<-data.frame()
+#iterating over all modules
+for ( i in setdiff(levels(factor(wt_mods$module)),"grey")){
+  
+  mod_list<-wt_mods[wt_mods$module==i,1]
+  
+  #get rid of any NA values inside of the module gene list
+  mod_list<-mod_list[!is.na(mod_list)]
+  
+  mech_tfs<-mechanistic(mod_list,expressed_genes,organism="human",gene_id="symbol")
+  
+  
+  
+  #change qvalue depending on teh lowest Q value found in the mech tf list
+  q_value=0.005
+  if (min(mech_tfs$q_value)>q_value){
+    q_value=min(mech_tfs$q_value)
+  }
+  
+  
+  # a message to keep track on what number module you're on
+  print(paste0(which(setdiff(levels(factor(wt_mods$module)),"grey")==i)," out of ", length(setdiff(levels(factor(wt_mods$module)),"grey")==i)))
+  assoc_tfs<-associate_with_expression(m,mech_tfs,organism="human",gene_id="symbol",method=c("pearson"),q_value = q_value)
+  
+  assoc_tfs$module<-i
+  
+  saveRDS(assoc_tfs,paste0(dataout,"Individual_Module_tfs/",i,".rds"))
+  
+  all_assoc<-append(all_assoc,assoc_tfs)
+  
+  neg_assoc_tfs<-assoc_tfs[assoc_tfs$Pearson_R<0,] %>% arrange(Pearson_p_value) %>% slice_head(n=20)
+  pos_assoc_tfs<-assoc_tfs[assoc_tfs$Pearson_R>0,] %>% arrange(Pearson_p_value) %>% slice_head(n=20)
+  
+  #add the module results to teh complete tf dataframe
+  neg_assoc<-rbind(neg_assoc,neg_assoc_tfs)
+  pos_assoc<-rbind(pos_assoc,pos_assoc_tfs)
+  
+}
+
+saveRDS(all_assoc,paste0(dataout,"All_associated_tfs.rds"))
+saveRDS(neg_assoc,paste0(dataout,"negative_associated_tfs.rds"))
+saveRDS(pos_assoc,paste0(dataout,"positice_associated_tfs.rds"))
+
+
+
+####REPEATING FOR PIC SUBMODULES
+#SUBSETTING OUT THE LPS TREATED CELLS AND MOST OF THE CONTROL ONES, LEAVING ONLY THE WT
+re_scale_seurat_obj<-subset(re_scale_seurat_obj,subset= Treatment!="L")
+
+#re_scale_seurat_obj<-subset(re_scale_seurat_obj,subset= Treatment=="P"|Background=="C")
+
+# all genes from the assay
+expressed_genes <- rownames(GetAssayData(re_scale_seurat_obj, assay = "SCT", layer = "data"))
+
+# a scaled expression matrix
+m <- as.matrix(GetAssayData(re_scale_seurat_obj, assay = "SCT", layer = "scale.data"))
+
+
+
+##running for all PIC modules
+dataout<-paste0(datain,"All_PIC_WGCNA/Attempt_",Attempt_Number2,"/scRegNet/")
+dir_create(paste0(dataout,"Individual_Module_tfs/"),recurse=TRUE)
+
+#initialize the summary list and the neg and pos associated tfs
+all_assoc<-list()
+pos_assoc<-data.frame()
+neg_assoc<-data.frame()
+#iterating over all modules
+for ( i in setdiff(levels(factor(all_pic_mods$module)),"grey")){
+  
+  mod_list<-all_pic_mods[all_pic_mods$module==i,1]
+  
+  #get rid of any NA values inside of the module gene list
+  mod_list<-mod_list[!is.na(mod_list)]
+  
+  mech_tfs<-mechanistic(mod_list,expressed_genes,organism="human",gene_id="symbol")
+  
+  
+  #change qvalue depending on teh lowest Q value found in the mech tf list
+  q_value=0.005
+  if (min(mech_tfs$q_value)>q_value){
+    q_value=min(mech_tfs$q_value)
+  }
+  
+  # a message to keep track on what number module you're on
+  print(paste0(which(setdiff(levels(factor(all_pic_mods$module)),"grey")==i)," out of ", length(setdiff(levels(factor(all_pic_mods$module)),"grey")==i)))
+  assoc_tfs<-associate_with_expression(m,mech_tfs,organism="human",gene_id="symbol",method=c("pearson"),q_value = q_value)
+  
+  assoc_tfs$module<-i
+  
+  saveRDS(assoc_tfs,paste0(dataout,"Individual_Module_tfs/",i,".rds"))
+  
+  
+  all_assoc<-rbind(all_assoc,assoc_tfs)
+  
+  
+}
+
+all_assoc<-all_assoc %>% dplyr::filter(Pearson_p_value<0.05) %>% group_by(module) %>% mutate(Direction= case_when(Pearson_R<0 ~ "Down",Pearson_R>0 ~ "Up")) %>% arrange(desc(Pearson_R),Pearson_p_value)
+
+saveRDS(all_assoc,paste0(dataout,"All_associated_tfs.rds"))
+
+up_associated_tf_summary<- all_assoc %>% dplyr::group_by(module) %>% filter(Pearson_R>0) %>% slice(1:10)
+down_associated_tf_summary<- all_assoc %>% dplyr::group_by(module) %>% filter(Pearson_R<0) %>% slice_tail(n=10)
+write_csv(up_associated_tf_summary,paste0(dataout,"up_associated_tfs.csv"))
+write_csv(down_associated_tf_summary,paste0(dataout,"down_associated_tfs.csv"))
+
+c(unique(down_associated_tfs[down_associated_tfs$module=="blue",3]))
+
+
+
+
+
+##### MOD COMPARE ####
+Attempt_Number1<-1
+Attempt_Number2<-1
+Target_name<-"new_URN_int_sct"
+#PIC object origin,
+
+#READ IN BOTH MODULE GENE LISTS
+datain<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/")
+WT_obj<-readRDS(paste0(datain,"Isolate_WGCNA/Attempt_",Attempt_Number1,"/",Target_name,"WGCNA_final_WTonly.rds"))
+PIC_obj<-readRDS(paste0(datain,"All_PIC_WGCNA/Attempt_",Attempt_Number2,"/",Target_name,"WGCNA_final_PIC_WT.rds"))
+
+
+wtmods<-GetModules(WT_obj)
+picmods<-GetModules(PIC_obj)
+sum(wtmods$gene_name %in%picmods$gene_name)
+merged_mods<-merge(wtmods[,1:2],picmods[,1:2], by="gene_name")
+colnames(merged_mods)<-c("gene_name","WT_Modules","PIC_Modules")
+merged_mods_grey<-merged_mods[! merged_mods$PIC_Modules=="grey",]
+alluvial_data_grey<-merged_mods_grey %>% dplyr::count(WT_Modules,PIC_Modules) 
+merged_mods<-merged_mods[!(merged_mods$WT_Modules=="grey" | merged_mods$PIC_Modules=="grey"),]
+alluvial_data<-merged_mods %>% dplyr::count(WT_Modules,PIC_Modules) 
+
+
+#make a vector of all the module colors and assign their own color to them. 
+module_colors<-as.character(unique(c(merged_mods$PIC_Modules,merged_mods$WT_Modules)))
+names(module_colors)<-unique(c(merged_mods$PIC_Modules,merged_mods$WT_Modules))
+
+
+
+
+
+ggplot(data=alluvial_data,
+       aes(axis1=WT_Modules,axis2=PIC_Modules,y=n))+
+  geom_alluvium(aes(fill=WT_Modules))+
+  geom_stratum(
+    aes(fill = after_stat(stratum)),
+    color = "black"
+  ) +
+  
+  geom_text(stat="stratum",aes(label = after_stat(stratum))) +
+  scale_x_discrete(limits = c("WT_Modules", "PIC_Modules"),
+                   expand = c(0.15, 0.05)) +
+  scale_fill_manual(
+    values = module_colors
+  ) +
+  scale_x_discrete(
+    limits = c("WT_Modules", "PIC_Modules"),
+    expand = c(0.15, 0.05)
+  ) +
+  theme_cowplot()
+ggsave(paste0(datain,"All_PIC_WGCNA/Attempt_",Attempt_Number2,"/Figures/ModuleDestiny.png"),height=10,width=8)
+
+
+
+ggplot(data=alluvial_data_grey,
+       aes(axis1=WT_Modules,axis2=PIC_Modules,y=n))+
+  geom_alluvium(aes(fill=WT_Modules))+
+  geom_stratum(
+    aes(fill = after_stat(stratum)),
+    color = "black"
+  ) +
+  
+  geom_text(stat="stratum",aes(label = after_stat(stratum))) +
+  scale_x_discrete(limits = c("WT_Modules", "PIC_Modules"),
+                   expand = c(0.15, 0.05)) +
+  scale_fill_manual(
+    values = module_colors
+  ) +
+  scale_x_discrete(
+    limits = c("WT_Modules", "PIC_Modules"),
+    expand = c(0.15, 0.05)
+  ) +
+  theme_cowplot()
+ggsave(paste0(datain,"All_PIC_WGCNA/Attempt_",Attempt_Number2,"/Figures/ModuleDestiny_wGrey.png"),height=10,width=8)
+
+
+
+##Module network comparisons
+tomcheck<-GetTOM(PIC_obj)
+picmods<-GetModules(PIC_obj)
+royalmod<-picmods[picmods$module=="royalblue",1]
+turqmod<-picmods[picmods$module=="turquoise",1]
+redmod<-picmods[picmods$module=="red",1]
+
+royalTOM<-(tomcheck[royalmod, royalmod ])
+redTOM<-(tomcheck[redmod,redmod ])
+turqTOM<-(tomcheck[turqmod,turqmod ])
+
+sumTOM<- colSums(royalTOM, na.rm = TRUE)
+tomnames<-names(head(sort(sumTOM, decreasing = TRUE), 25))
+
+# The matrix is mirrored across teh diagonal
+#only keep the upper triangular part of the TOM:
+royalTOM[upper.tri(royalTOM)] <- NA
+
+# cast the network from wide to long format
+cur_network <- royalTOM %>% 
+  reshape2::melt() %>% 
+  dplyr::rename(gene1 = Var1, gene2 = Var2, weight=value) %>%
+  subset(!is.na(weight))
+
+
+# keep this network before subsetting
+cur_network_full <- cur_network 
+
+# keep the top 20% of edges 
+edge_percent <- 0.2
+cur_network <- cur_network_full %>% 
+  dplyr::slice_max(
+    order_by = weight, 
+    n = round(nrow(cur_network)*edge_percent)
+  )
+
+# make the graph object with tidygraph
+graph <- cur_network %>% 
+  igraph::graph_from_data_frame() %>%
+  tidygraph::as_tbl_graph(directed=FALSE) %>% 
+  tidygraph::activate(nodes)
+
+
+# get the top 25 hub genes for each module
+hub_genes <- GetHubGenes(PIC_obj, n_hubs=25) %>% filter(module=="royalblue") %>% .$gene_name
+V(graph)$hub <- ifelse(V(graph)$name %in% hub_genes, V(graph)$name, "")
+
+# make the plot with gggraph
+p <- ggraph(graph) + 
+  geom_edge_link(aes(alpha=weight)) + 
+  geom_node_point(color='black') +
+  geom_node_label(aes(label=hub), repel=TRUE, max.overlaps=Inf, fontface='italic') 
+
+p
+
+#Now make a correlation network for these same genes in a sample by sample manner? 
+
+#####TOM GENERATION FOR WT ONLY PIC AND CTRL AND THEN TEH SAME FOR ZSC3####
+Attempt_number<-1
+
+datain<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Seurat_Analysis")
+dataout<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Isolate_WGCNA/","Attempt_",Attempt_number)
+
+
+seurat_obj<-readRDS(paste0(datain,"/",Target_name,"_final.rds"))
+
+
+# using the cowplot theme for ggplot
+theme_set(theme_cowplot())
+
+# set random seed, k nearest neighbors parameter and network type for reproducibility
+set.seed(12345)
+k.parameter<-60
+max_shared<-15
+net.type<-"signed"
+merge_height<-0.20
+deep_split<-3
+mod_size<-60
+
+parameter_list<-c(k.parameter,max_shared,net.type,Target_name,Attempt_number,merge_height,deep_split,mod_size)
+
+
+# optionally enable multithreading
+enableWGCNAThreads(nThreads = 4)
+
+
+###Create wild type seurat object
+wildsub_seurat_obj<-subset(seurat_obj, subset= Background=="C" & Treatment %in% c("P","C"))
+
+picsub_seurat_obj<-subset(seurat_obj, subset= Background=="3" & Treatment %in% c("P","C"))
+
+#Set up subsetted object for WGCNA
+wildsub_seurat_obj <- SetupForWGCNA(
+  wildsub_seurat_obj,
+  gene_select = "fraction", # the gene selection approach
+  fraction = 0.05, # fraction of cells that a gene needs to be expressed in order to be included
+  wgcna_name = "wildsub_isolate" # the name of the hdWGCNA experiment
+)
+
+#Creating metacells using the samples as the biosamples
+#Would it be better to construct them out of the same background. so that LPS, PIC ad CTRL cells can comingle into the same emtacell group? In case some cells in the treated samples remain in a homoeostatic state
+wildsub_seurat_obj <- MetacellsByGroups(
+  seurat_obj = wildsub_seurat_obj,
+  group.by = c("Sample"), # specify the columns in seurat_obj@meta.data to group by
+  reduction = 'pca', # select the dimensionality reduction to perform KNN on
+  k = k.parameter, # nearest-neighbors parameter
+  max_shared = max_shared, # maximum number of shared cells between two metacells
+  ident.group = 'Sample' # set the Idents of the metacell seurat object
+)
+
+
+# normalize metacell expression matrix:
+wildsub_seurat_obj <- NormalizeMetacells(wildsub_seurat_obj)
+
+
+
+
+##########WGCNA and correlation of modules####
+#Run hdWGCNA on only the WT cells. THis will allow for the discovery of
+#expected module response to LPS and PIC
+wildsub_seurat_obj <- SetDatExpr(
+  wildsub_seurat_obj,
+  assay = 'SCT', # using RNA assay
+  layer = 'data' # using normalized data
+)
+
+
+# Test different soft powers:
+wildsub_seurat_obj <- TestSoftPowers(
+  wildsub_seurat_obj,
+  networkType = net.type # you can also use "unsigned" or "signed hybrid"
+)
+
+# plot the results:
+plot_list <- PlotSoftPowers(wildsub_seurat_obj)
+
+
+# assemble with patchwork
+wrap_plots(plot_list, ncol=2)
+
+#Consturct the WGCNA Network
+wildsub_seurat_obj <- ConstructNetwork(
+  wildsub_seurat_obj,
+  networktype=net.type,
+  tom_name = 'wildsub_isolate' , # name of the topological overlap matrix written to disk
+  #tom_outdir= paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/WGCNA"),
+  deepSplit = deep_split,
+  minModuleSize = mod_size,
+  mergeCutHeight = merge_height,
+  overwrite_tom=TRUE,
+  soft_power=9,
+  store_tom_in_seurat=TRUE
+  
+  
+)
+
+#####FOR PIC ######
+
+#Set up subsetted object for WGCNA
+picsub_seurat_obj <- SetupForWGCNA(
+  picsub_seurat_obj,
+  gene_select = "fraction", # the gene selection approach
+  fraction = 0.05, # fraction of cells that a gene needs to be expressed in order to be included
+  wgcna_name = "picsub_isolate" # the name of the hdWGCNA experiment
+)
+
+#Creating metacells using the samples as the biosamples
+#Would it be better to construct them out of the same background. so that LPS, PIC ad CTRL cells can comingle into the same emtacell group? In case some cells in the treated samples remain in a homoeostatic state
+picsub_seurat_obj <- MetacellsByGroups(
+  seurat_obj = picsub_seurat_obj,
+  group.by = c("Sample"), # specify the columns in seurat_obj@meta.data to group by
+  reduction = 'pca', # select the dimensionality reduction to perform KNN on
+  k = k.parameter, # nearest-neighbors parameter
+  max_shared = max_shared, # maximum number of shared cells between two metacells
+  ident.group = 'Sample' # set the Idents of the metacell seurat object
+)
+
+
+# normalize metacell expression matrix:
+picsub_seurat_obj <- NormalizeMetacells(picsub_seurat_obj)
+
+
+
+
+##########WGCNA and correlation of modules####
+#Run hdWGCNA on only the WT cells. THis will allow for the discovery of
+#expected module response to LPS and PIC
+picsub_seurat_obj <- SetDatExpr(
+  picsub_seurat_obj,
+  assay = 'SCT', # using RNA assay
+  layer = 'data' # using normalized data
+)
+
+
+# Test different soft powers:
+picsub_seurat_obj <- TestSoftPowers(
+  picsub_seurat_obj,
+  networkType = net.type # you can also use "unsigned" or "signed hybrid"
+)
+
+# plot the results:
+plot_list <- PlotSoftPowers(picsub_seurat_obj)
+
+
+# assemble with patchwork
+wrap_plots(plot_list, ncol=2)
+
+#Consturct the WGCNA Network
+picsub_seurat_obj <- ConstructNetwork(
+  picsub_seurat_obj,
+  networktype=net.type,
+  tom_name = 'picsub_isolate' , # name of the topological overlap matrix written to disk
+  #tom_outdir= paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/WGCNA"),
+  deepSplit = deep_split,
+  minModuleSize = mod_size,
+  mergeCutHeight = merge_height,
+  overwrite_tom=TRUE,
+  soft_power=9,
+  store_tom_in_seurat=TRUE
+)
+
+
+#####
+wildsubTOM<-GetTOM(wildsub_seurat_obj)
+
+picsubTOM<-GetTOM(picsub_seurat_obj)
+
+wsroyalTOM<-wildsubTOM[royalmod,royalmod]
+sumTOM<- colSums(wsroyalTOM, na.rm = TRUE)
+wstomnames<-names(head(sort(sumTOM, decreasing = TRUE), 25))
+
+psroyalTOM<-picsubTOM[royalmod,royalmod]
+sumTOM<- colSums(psroyalTOM, na.rm = TRUE)
+pstomnames<-names(head(sort(sumTOM, decreasing = TRUE), 25))
+
+check<-wsroyalTOM-psroyalTOM
+wsroyalTOM[upper.tri(wsroyalTOM)] <- NA
+psroyalTOM[upper.tri(psroyalTOM)] <- NA
+
+check<-abs(check)
+sumTOM<- colSums(check, na.rm = TRUE)
+checktomnames<-names(head(sort(sumTOM, decreasing = TRUE), 25))
+
+
+
+# cast the network from wide to long format
+cur_network <- psroyalTOM %>% 
+  reshape2::melt() %>% 
+  dplyr::rename(gene1 = Var1, gene2 = Var2, weight=value) %>%
+  subset(!is.na(weight))
+
+
+# keep this network before subsetting
+cur_network_full <- cur_network 
+
+# keep the top 20% of edges 
+edge_percent <- 0.2
+cur_network <- cur_network_full %>% 
+  dplyr::slice_max(
+    order_by = weight, 
+    n = round(nrow(cur_network)*edge_percent)
+  )
+
+# make the graph object with tidygraph
+graph <- cur_network %>% 
+  igraph::graph_from_data_frame() %>%
+  tidygraph::as_tbl_graph(directed=FALSE) %>% 
+  tidygraph::activate(nodes)
+
+
+# get the top 25 hub genes for each module
+hub_genes <- GetHubGenes(PIC_obj, n_hubs=25) %>% filter(module=="royalblue") %>% .$gene_name
+V(graph)$hub <- ifelse(V(graph)$name %in% hub_genes, V(graph)$name, "")
+
+# make the plot with gggraph
+p <- ggraph(graph) + 
+  geom_edge_link(aes(alpha=weight)) + 
+  geom_node_point(color='black') +
+  geom_node_label(aes(label=hub), repel=TRUE, max.overlaps=Inf, fontface='italic') 
+
+p
+
+
+checkhub<-check[hub_genes,hub_genes]
+checkhub[upper.tri(checkhub)] <- NA
+
+
+
+#####heatmaps of the modules of interest
+
+mc<-GetMetacellObject(PIC_obj) 
+mc<-subset(mc,Sample %in% c('ZSCJP', 'ZSC2P'))
+
+expr <- GetAssayData(
+  mc,
+  assay = "SCT",
+  layer = "data"
+)
+
+mat <- as.matrix(
+  expr[turqmod, , drop = FALSE]
+)
+
+
+mat_scaled <- t(scale(t(mat)))
+
+mat_scaled <- mat_scaled[
+  apply(mat_scaled, 1, function(x) all(is.finite(x))),
+  ,
+  drop = FALSE
+]
+
+
+# Create column annotation showing sample origin
+annotation_col <- data.frame(
+  Sample = mc$Sample
+)
+
+rownames(annotation_col) <- colnames(mat_scaled)
+
+# Optional: control the order of samples in the legend
+annotation_col$Sample <- factor(
+  annotation_col$Sample,
+  levels = c('ZSCJP','ZSC2P')
+)
+
+
+
+pheatmap(
+  mat_scaled,
+  annotation_col = annotation_col,
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  show_rownames = TRUE,
+  show_colnames = FALSE,
+  border_color = NA,
+  main = paste('turquoise ', "module -", 'WT-PIC and NS2a-PIC'),
+  fontsize_row = 7
+)

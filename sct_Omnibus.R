@@ -39,7 +39,7 @@ library(org.Hs.eg.db)
 
 Target_name<-"new_URN_int_sct"
 
-Attempt_number<-1
+Attempt_number<-2
 #IS THIS SEURAT OBJECT UnNORMALIZED?
 Norm_Check<-FALSE
 
@@ -667,10 +667,10 @@ Seurat_analysis<-function(Target_name,Norm_Check){
 
 # set random seed, k nearest neighbors parameter and network type for reproducibility
 set.seed(12345)
-k.parameter<-45
-max_shared<-15
+k.parameter<-25
+max_shared<-5
 net.type<-"signed"
-merge_height<-0.15
+merge_height<-0.2
 deep_split<-3
 mod_size<-60
 
@@ -695,8 +695,8 @@ WT_ONLY_WGCNA<-function(Target_name,Attempt_number){
   
   # set random seed, k nearest neighbors parameter and network type for reproducibility
   set.seed(12345)
-  k.parameter<-60
-  max_shared<-15
+  k.parameter<-25
+  max_shared<-5
   net.type<-"signed"
   merge_height<-0.20
   deep_split<-3
@@ -1294,7 +1294,7 @@ All_PIC_CTRL_WGCNA<-function(Target_name,Attempt_number,parameter_list){
   
   topGO<-list()
   
-  ontol<-"MF" #This can be changed depending on what ontology database you want to use
+  ontol<-"CC" #This can be changed depending on what ontology database you want to use
   dir_create(paste0(dataout, "/Figures/GO/",ontol),recurse=TRUE)
   
   for (i in mods){
@@ -1355,12 +1355,13 @@ All_PIC_CTRL_WGCNA<-function(Target_name,Attempt_number,parameter_list){
   }
   capture.output(noGO,file = paste0(dataout,"/Figures/GO/",ontol,"/nonSigModules.txt"))
   
-  
+  hub_genes<-GetHubGenes(sub_seurat_obj)
   
   #saving out the fully anlayzed wt_seruat object _in this case the PIC_WT_
   saveRDS(sub_seurat_obj,paste0(dataout,"/",Target_name,"WGCNA_final_PIC_WT.rds"))
   
   #Module DE####
+  sub_seurat_obj<-readRDS(paste0(dataout,"/",Target_name,"WGCNA_final_PIC_WT.rds"))
   
   
   # set up an empty dataframe for the DMEs
@@ -1436,7 +1437,6 @@ All_PIC_CTRL_WGCNA<-function(Target_name,Attempt_number,parameter_list){
     coord_equal()
   p
   
-  sub_seurat_obj<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int_sct/All_PIC_WGCNA/Attempt_1/new_URN_int_sctWGCNA_final_PIC_WT.rds")
   
   #module expression scores
   sub_seurat_obj <- ModuleExprScore(
@@ -1475,7 +1475,7 @@ All_PIC_CTRL_WGCNA<-function(Target_name,Attempt_number,parameter_list){
     DMSs <- rbind(DMSs, cur_DMSs)
   }
   
-  ###PLOT THE DME as heatmap
+  ###PLOT THE DMS as heatmap
   # get the modules table:
   modules <- GetModules(sub_seurat_obj)
   mods <- levels(modules$module); mods <- mods[mods != 'grey']
@@ -1487,7 +1487,7 @@ All_PIC_CTRL_WGCNA<-function(Target_name,Attempt_number,parameter_list){
   plot_df$module <- factor(as.character(plot_df$module), levels=mods)
   
   # set a min/max threshold for plotting
-  maxval <- 2; minval <- -2
+  maxval <- 1; minval <- -1
   plot_df$avg_log2FC <- ifelse(plot_df$avg_log2FC > maxval, maxval, plot_df$avg_log2FC)
   plot_df$avg_log2FC <- ifelse(plot_df$avg_log2FC < minval, minval, plot_df$avg_log2FC)
   
@@ -1517,7 +1517,7 @@ All_PIC_CTRL_WGCNA<-function(Target_name,Attempt_number,parameter_list){
       plot.margin=margin(0,0,0,0)
     ) + xlab('') + ylab('') +
     coord_equal()
-  p
+  ggsave(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/All_PIC_WGCNA/Attempt_",Attempt_number,"/Figures/DMS.png"),p)
   
   
   #hubgenes
@@ -1691,8 +1691,8 @@ c(unique(down_associated_tfs[down_associated_tfs$module=="blue",3]))
 
 
 ##### MOD COMPARE ####
-Attempt_Number1<-1
-Attempt_Number2<-1
+Attempt_Number1<-2
+Attempt_Number2<-2
 Target_name<-"new_URN_int_sct"
 #PIC object origin,
 
@@ -2057,8 +2057,8 @@ checkhub[upper.tri(checkhub)] <- NA
 
 #####heatmaps of the modules of interest
 
-mc<-GetMetacellObject(PIC_obj) 
-mc<-subset(mc,Sample %in% c('ZSCJP', 'ZSC2P'))
+mc<-GetMetacellObject(sub_seurat_obj) 
+mc<-subset(mc,Sample %in% c('ZSCJP', 'ZSC3P'))
 
 expr <- GetAssayData(
   mc,
@@ -2067,7 +2067,7 @@ expr <- GetAssayData(
 )
 
 mat <- as.matrix(
-  expr[turqmod, , drop = FALSE]
+  expr[picmods[picmods$module=="green",1], , drop = FALSE]
 )
 
 
@@ -2087,13 +2087,6 @@ annotation_col <- data.frame(
 
 rownames(annotation_col) <- colnames(mat_scaled)
 
-# Optional: control the order of samples in the legend
-annotation_col$Sample <- factor(
-  annotation_col$Sample,
-  levels = c('ZSCJP','ZSC2P')
-)
-
-
 
 pheatmap(
   mat_scaled,
@@ -2103,6 +2096,6 @@ pheatmap(
   show_rownames = TRUE,
   show_colnames = FALSE,
   border_color = NA,
-  main = paste('turquoise ', "module -", 'WT-PIC and NS2a-PIC'),
+  main = paste('green ', "module -", 'WT-PIC and NS2b-PIC'),
   fontsize_row = 7
 )

@@ -753,3 +753,132 @@ ggplot(plot_df,
 ggsave(paste0(dataout,"/fig3b.png"),width=6, height=5, dpi=300)
 
 
+
+###VENN DIAGRAM DE GO and TURQMODULE#######
+library(AnnotationDbi)
+library(org.Hs.eg.db)
+
+# Retrieve Ensembl IDs for a specific GO term
+gene_list <- select(org.Hs.eg.db, 
+                    keys = "GO:0051607", 
+                    keytype = "GOALL", 
+                    columns = c("SYMBOL", "ENSEMBL", "ENTREZID"))
+
+
+DE_data<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int_sct/Seurat_Analysis/vsP_DE.rds")
+C_DE<-dplyr::filter(DE_data[["C"]], expression=="Up")
+WT_seur<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int_sct/Isolate_WGCNA/Attempt_2/new_URN_int_sctWGCNA_final_WTonly.rds")
+turq_mod<-dplyr::filter(GetModules(WT_seur), module=="turquoise")
+
+mod_venn<-turq_mod$gene_name
+de_venn<-C_DE$gene
+go_venn<-unique(gene_list$SYMBOL)
+
+#Have to find which of the GO terms are even present in our analysis. Subsetting them for comparison
+gene_universe<-DE_data[["C"]]$gene
+go_venn_filtered<-go_venn[go_venn %in% gene_universe]
+
+library(ggvenn)
+venn<-list(Turquoise_Module=mod_venn, PIC_DE=de_venn, Antiviral_GO=go_venn_filtered)
+ggvenn(venn, fill_color = c("red", "blue", "green"))
+
+
+
+
+
+####Network highlighting####
+pic_seurat_obj<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int_sct/All_PIC_WGCNA/Attempt_3/new_URN_int_sctWGCNA_final_PIC_WT.rds")
+
+#Pull the topological overlap matrix form teh seuart object
+TOM<-GetTOM(pic_seurat_obj)
+
+#Pull the list of gene module membership from teh seuart obejct
+pic_mods<-GetModules(pic_seurat_obj)
+
+#Select which module you want to plot
+mod_name<-"red"
+#pull the gene list in teh selected module
+current_mod<-dplyr::filter(pic_mods,module==mod_name)
+
+#Subset the TOM with the genes inside the selected module
+currentTOM<-TOM[current_mod$gene_name,current_mod$gene_name]
+
+#Zero out the upper half to the TOM, which is symetrical to the bottom half. across a diagonal
+currentTOM[upper.tri(currentTOM)] <- NA
+
+
+# cast the network from wide to long format
+cur_network <- currentTOM %>% 
+  reshape2::melt() %>% 
+  dplyr::rename(gene1 = Var1, gene2 = Var2, weight=value) %>%
+  subset(!is.na(weight))
+
+
+# keep this network before subsetting
+cur_network_full <- cur_network 
+
+# keep the top 10% of edges 
+edge_percent <- 0.1
+cur_network <- cur_network_full %>% 
+  dplyr::slice_max(
+    order_by = weight, 
+    n = round(nrow(cur_network)*edge_percent)
+  )
+
+# make the graph object with tidygraph
+graph <- cur_network %>% 
+  igraph::graph_from_data_frame() %>%
+  tidygraph::as_tbl_graph(directed=FALSE) %>% 
+  tidygraph::activate(nodes)
+
+
+# get the top 25 hub genes for the selected module
+hub_genes<-head(current_mod %>% arrange(desc(get(paste0("kME_",mod_name)))),n=10)
+hub_genes<-hub_genes$gene_name                
+V(graph)$hub <- ifelse(V(graph)$name %in% hub_genes, V(graph)$name, "")
+
+
+#Change the color of the nodes depending if they are Differntially expressed in ZSC3P or not
+DE_df<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int_sct/All_PIC_WGCNA/Attempt_3/vsP_DE.rds")
+curr_background<-dplyr::filter(DE_df[["3"]],expression=="Down")[,"gene"]
+test<-DE_df[["3"]]
+
+
+graph <- graph %>%
+  activate(nodes) %>%
+  mutate(
+    in_gene_set = name %in% curr_background
+  )
+
+
+# make the plot with gggraph
+p <- ggraph(graph) + 
+  geom_edge_link(aes(alpha=weight)) + 
+  geom_node_point(
+    aes(color = name %in% curr_background)
+  ) +
+  scale_color_manual(
+    values = c("FALSE" = "grey70", "TRUE" = "red")
+  ) +
+  geom_node_label(aes(label=hub), repel=TRUE, max.overlaps=Inf, fontface='italic')+
+  theme_cowplot() +
+  labs(title="Red Module Network, NS2b-PIC DE")+
+  theme(
+    legend.text = element_text(size = 8, color = "black"),
+    legend.title=element_blank(),
+    axis.title.x= element_blank(),
+    axis.title.y= element_blank(),
+    axis.ticks = element_blank(),
+    plot.title = element_text(size=11,color="black",hjust=0.5,face="plain"),
+    axis.text = element_blank()
+    
+  ) +
+  labs(
+    x = "Module",
+    y = "Zsummary"
+  )
+
+
+p
+
+

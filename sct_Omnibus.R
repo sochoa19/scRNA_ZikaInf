@@ -418,11 +418,26 @@ Seurat_analysis<-function(Target_name,Norm_Check){
     labs(title=paste0(Target_name,": UMAP"))
   ggsave(paste0(dataout,"Figures/Dimensional_Reduction/SampleUmap.png"))
   
+  #Plotting UMAP grouping by cluster
+  DimPlot(Seur_target, reduction = "umap",group.by="seurat_clusters",label=FALSE)+
+    labs(title=paste0(Target_name,": UMAP"))
+  ggsave(paste0(dataout,"Figures/Dimensional_Reduction/ClusterUmap.png"))
+  
+  
   saveRDS(Seur_target,paste0(dataout,Target_name,"_final.rds"))
   
+  #Plotting teh cluster
+  cluster_plot<-Seur_target@meta.data %>% group_by(Treatment) %>% dplyr::count(seurat_clusters)
+  ggplot(cluster_plot,aes(x=Treatment,y=n,fill=seurat_clusters))+
+    geom_bar(position="stack",stat = "identity")
+  ggsave(paste0(dataout,"Figures/Dimensional_Reduction/ClusterBars.png"))
   
   
-  
+ cluster.markers <- FindAllMarkers(Seur_target, only.pos = TRUE)
+  cluster_sig<-cluster.markers %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1)  
+  saveRDS(cluster.markers,paste0(dataout,"/Cluster_markers.rds"))
   ###DIFFERENTIAL EXPERSSION FOR PIC ONLY ACROSS BACKGROUNDS####
   
   #########Make Volcano plots for all Ctrl vs LPs or Ctrl vs PIC inside of each genetic treatment
@@ -590,6 +605,7 @@ Seurat_analysis<-function(Target_name,Norm_Check){
     
     
     
+    
   }
   
   
@@ -664,6 +680,7 @@ Seurat_analysis<-function(Target_name,Norm_Check){
 }
 
 
+Attempt_number<-2
 
 # set random seed, k nearest neighbors parameter and network type for reproducibility
 set.seed(12345)
@@ -1034,6 +1051,10 @@ WT_ONLY_WGCNA<-function(Target_name,Attempt_number){
   head(hub_df)
   
   
+  ###VENN DIAGRAM OF TURQUOISE MODULE, GO antiviral, DE WT-C and WT-P
+  modules$gene_name
+  
+  
   #Saving the final versions of WGCNA analysis. Both the wt_ object containing the metacells and the full dataset.
   saveRDS(seurat_obj,paste0(dataout,"/",Target_name,"WGCNA_final_WTonly_projected.rds"))
   
@@ -1042,6 +1063,21 @@ WT_ONLY_WGCNA<-function(Target_name,Attempt_number){
   
   
 }
+
+
+
+Attempt_number<-3
+
+
+set.seed(12345)
+k.parameter<-25
+max_shared<-5
+net.type<-"signed hybrid"
+merge_height<-0.15
+deep_split<-3
+mod_size<-50
+
+parameter_list<-c(k.parameter,max_shared,net.type,Target_name,Attempt_number,merge_height,deep_split,mod_size)
 
 
 
@@ -1257,7 +1293,7 @@ All_PIC_CTRL_WGCNA<-function(Target_name,Attempt_number,parameter_list){
   z
   
   
-  #######RUNNING GO on the modules and on the genes with kme above 0.5
+  #######RUNNING GO on the modules and on the genes with kme above 0.5####
   library(clusterProfiler)
   library(AnnotationDbi)
   library(org.Hs.eg.db)
@@ -1294,7 +1330,7 @@ All_PIC_CTRL_WGCNA<-function(Target_name,Attempt_number,parameter_list){
   
   topGO<-list()
   
-  ontol<-"CC" #This can be changed depending on what ontology database you want to use
+  ontol<-"MF" #This can be changed depending on what ontology database you want to use
   dir_create(paste0(dataout, "/Figures/GO/",ontol),recurse=TRUE)
   
   for (i in mods){
@@ -1351,17 +1387,20 @@ All_PIC_CTRL_WGCNA<-function(Target_name,Attempt_number,parameter_list){
     dotplot(ego, showCategory = 10)+
       ggtitle(paste0(ontol,"GO enrichment of ", currcolor, " module"))
     ggsave(paste0(dataout,"/Figures/GO/",ontol,"/",currcolor,"_GO.png"),height=1800,width=2200,units= "px", dpi= 300)
-    topGO<-append(topGO,paste(head(ego@result$Description,n=5),collapse=","))
+    topGO[i]<-paste(head(ego@result$Description,n=5),collapse=",")
   }
   capture.output(noGO,file = paste0(dataout,"/Figures/GO/",ontol,"/nonSigModules.txt"))
   
-  hub_genes<-GetHubGenes(sub_seurat_obj)
+  hub_genes<-GetHubGenes(sub_seurat_obj,n=10)
+  
+  hub_list<-split(hub_genes$gene_name, ceiling(seq_along(hub_genes$gene_name) / 10))
+  
   
   #saving out the fully anlayzed wt_seruat object _in this case the PIC_WT_
   saveRDS(sub_seurat_obj,paste0(dataout,"/",Target_name,"WGCNA_final_PIC_WT.rds"))
   
   #Module DE####
-  sub_seurat_obj<-readRDS(paste0(dataout,"/",Target_name,"WGCNA_final_PIC_WT.rds"))
+  #sub_seurat_obj<-readRDS(paste0(dataout,"/",Target_name,"WGCNA_final_PIC_WT.rds"))
   
   
   # set up an empty dataframe for the DMEs
@@ -1519,6 +1558,7 @@ All_PIC_CTRL_WGCNA<-function(Target_name,Attempt_number,parameter_list){
     coord_equal()
   ggsave(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/All_PIC_WGCNA/Attempt_",Attempt_number,"/Figures/DMS.png"),p)
   
+  p
   
   #hubgenes
   sub_hub_df <- GetHubGenes(sub_seurat_obj, n_hubs = 10)
@@ -1526,7 +1566,7 @@ All_PIC_CTRL_WGCNA<-function(Target_name,Attempt_number,parameter_list){
 
 }
 
-###sc_REgNet
+###sc_REgNet####
 #scRegNet tests
 
 library(Seurat)
@@ -1536,8 +1576,8 @@ library(fs)
 library(dplyr)
 
 Target_name<-"new_URN_int_sct"
-Attempt_Number1<-1
-Attempt_Number2<-1
+Attempt_Number1<-2
+Attempt_Number2<-3
 
 datain<-(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/"))
 
@@ -1692,7 +1732,7 @@ c(unique(down_associated_tfs[down_associated_tfs$module=="blue",3]))
 
 ##### MOD COMPARE ####
 Attempt_Number1<-2
-Attempt_Number2<-2
+Attempt_Number2<-3
 Target_name<-"new_URN_int_sct"
 #PIC object origin,
 
@@ -2055,10 +2095,10 @@ checkhub[upper.tri(checkhub)] <- NA
 
 
 
-#####heatmaps of the modules of interest
+#####heatmaps of the modules of interest####
 
 mc<-GetMetacellObject(sub_seurat_obj) 
-mc<-subset(mc,Sample %in% c('ZSCJP', 'ZSC3P'))
+mc<-subset(mc,Sample %in% c('ZSCJP', 'ZSC3P',"ZSCJC","ZSC3C"))
 
 expr <- GetAssayData(
   mc,
@@ -2067,7 +2107,7 @@ expr <- GetAssayData(
 )
 
 mat <- as.matrix(
-  expr[picmods[picmods$module=="green",1], , drop = FALSE]
+  expr[picmods[picmods$module=="blue",1], , drop = FALSE]
 )
 
 
@@ -2096,6 +2136,95 @@ pheatmap(
   show_rownames = TRUE,
   show_colnames = FALSE,
   border_color = NA,
-  main = paste('green ', "module -", 'WT-PIC and NS2b-PIC'),
+  main = paste('blue ', "module -", 'WT-PIC and NS2b-PIC'),
   fontsize_row = 7
 )
+
+
+
+####DE AND MOD CHECKS####
+Target_name <- "new_URN_int_sct"
+Attempt_number<-3
+datain<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Seurat_Analysis")
+dataout<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/All_PIC_WGCNA/","Attempt_",Attempt_number)
+
+sub_seurat_obj<-readRDS(paste0(dataout,"/",Target_name,"WGCNA_final_PIC_WT.rds"))
+
+de.P.list<-list()
+sig.P.names<-list()
+#Iterate DE Volcano function over each background of the dataset. 
+#This way you're getting PIC and LPS DE analysis inside each background
+for (i in  setdiff(levels(factor(sub_seurat_obj$Background)),"J")){
+  Cname=paste0("ZSCJP")
+  Pname=paste0("ZSC",i,"P")
+  de.P<-DEVolcano(sub_seurat_obj,Pname,Cname,"Sample",paste0(dataout,"/"))
+  sig.P.names<-append(sig.P.names,de.P[de.P$expression!="NS",7])
+  de.P.list[[i]]<-de.P
+}
+#makes a unqiue lsit of all significant genes across all backgrounds
+all.sig.P<-unique(sig.P.names)
+#saves a list fo dataframes, each one with the DE results for each treatment vs its isogenic ctrl
+saveRDS(de.P.list,paste0(dataout,"/vsP_DE.rds"))
+
+de.P.list<-readRDS(paste0(dataout,"/vsP_DE.rds"))
+
+P3<-de.P.list[["3"]]
+upP3<-P3 %>% dplyr::filter(expression=="Up")
+downP3<-P3 %>% dplyr::filter(expression=="Down")
+
+picmods<-GetModules(sub_seurat_obj)
+picmods$kME_module<-picmods[cbind(
+  seq_len(nrow(picmods)),
+  match(paste0("kME_", picmods$module), names(picmods))
+)]
+picmods$foldchange<-P3[rownames(picmods),2]
+picmods$expression<-P3[rownames(picmods),6]
+picmods<-picmods[!is.na(picmods$foldchange),]
+
+base=2
+module_check<-"red"
+ggplot(picmods[picmods$module==module_check,],aes(x=kME_module,y=foldchange,color=expression))+
+  geom_point()+
+  labs(title=paste0(module_check," module gene member expression "))+
+  theme_cowplot( )+
+  theme(legend.text = element_text(size = base, color = "black"),
+
+        axis.text.x=element_blank(),
+        axis.title.x= element_text(size=base*4,color="black"),
+        axis.line = element_line(colour = 'black', size = base/7),
+        axis.title.y= element_text(size=base*4,color="black"),
+        plot.title = element_text(size=base*5,color="black",hjust=1,face="plain"),
+  )
+  
+
+upP3$module<-picmods[rownames(upP3),2]
+upP3$kme_module<-picmods[rownames(upP3),ncol(picmods)]
+
+upP3<-upP3 %>% dplyr::filter(module!="grey") %>% arrange(module,p_val_adj) 
+
+
+downP3$module<-picmods[rownames(downP3),2]
+downP3<-downP3 %>% dplyr::filter(module!="grey") %>% arrange(module,p_val_adj) 
+
+
+####ZSC7P
+P7<-de.P.list[["7"]]
+upP7<-P7 %>% dplyr::filter(expression=="Up")
+downP7<-P7 %>% dplyr::filter(expression=="Down")
+
+picmods<-GetModules(sub_seurat_obj)
+upP7$module<-picmods[rownames(upP7),2]
+upP7<-upP7 %>% filter(module!="grey") %>% arrange(module,p_val_adj) 
+
+downP7$module<-picmods[rownames(downP7),2]
+downP7<-downP7 %>% filter(module!="grey") %>% arrange(module,p_val_adj) 
+
+
+
+#####MODULE Coherence from WT WGCNA to all Other samples
+
+red_sig<-picmods[picmods$module=="red" & picmods$expression!="NS",]
+red_mods<-picmods[picmods$module=="red",]
+tops<-head(red_mods %>% arrange(desc(kME_red)),n=25)$gene 
+sum(tops %in% red_sig$gene_name)
+

@@ -15,24 +15,25 @@ library(patchwork)
 # co-expression network analysis packages:
 library(WGCNA)
 library(hdWGCNA)
-
 #general help
 library(fs)
-Target_name<-"UCC_Integrated"
+library(dplyr)
+
+Target_name<-"new_URN_int_sct"
 
 #Provide attempt number. This is to keep straight what module results are tied to which metacell construction and hdWGCNA parameter
 Attempt_Number<-"2"
 
 
 datain<-paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Isolate_WGCNA/Attempt_",Attempt_Number)
-dataout<-paste0(dataout,"/Module_Preservation")
+dataout<-paste0(datain,"/Module_Preservation")
 
 dir_create(dataout)
 
 
 ##Reading in seurat objects and parameter list used in ATTEMPT_NUMBER
-seurat_obj<-readRDS(paste0(datain,"/",Target_name,"WGCNA_final.rds"))
-wt_seurat_obj<-readRDS(past(datain,"/",Target_name,"WGCNA_final_WTonly.rds"))
+seurat_obj<-readRDS(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/",Target_name,"/Seurat_Analysis/",Target_name,"_final.rds"))
+wt_seurat_obj<-readRDS(paste0(datain,"/",Target_name,"WGCNA_final_WTonly.rds"))
 
 parameter_list<-readRDS(paste0(datain,"/Parameter_list.rds"))
 k.parameter<-as.numeric(parameter_list[1])
@@ -42,7 +43,7 @@ net.type<-parameter_list[3]
 #Using the native module preservation protocol from WGCNA
 ##############MODULE PRESERVATION#####
 
-for (i in unique(seurat_obj$Background)){
+for (i in setdiff(levels(factor(seurat_obj$Background)),"12")){
   #Iterate the module preservation test over all the 
   Backtest<-i
   
@@ -61,11 +62,11 @@ for (i in unique(seurat_obj$Background)){
   # construct metacells for query dataset:
   pres_seurat_obj <- MetacellsByGroups(
     seurat_obj = pres_seurat_obj,
-    group.by ="Background",
+    group.by ="Sample",
     k = k.parameter,
     max_shared = max_shared,
     reduction = 'pca',
-    ident.group = 'Background'
+    ident.group = 'Sample'
   )
   
   pres_seurat_obj <- NormalizeMetacells(pres_seurat_obj)
@@ -73,7 +74,7 @@ for (i in unique(seurat_obj$Background)){
   
   wt_seurat_obj <- SetDatExpr(
     wt_seurat_obj,
-    assay = 'RNA', # using RNA assay
+    assay = 'SCT', # using SCT assay
     layer = 'data', # using normalized data
     use_metacells=TRUE
   )
@@ -81,7 +82,7 @@ for (i in unique(seurat_obj$Background)){
   
   pres_seurat_obj <- SetDatExpr(
     pres_seurat_obj,
-    assay = 'RNA', # using RNA assay
+    assay = 'SCT', # using RNA assay
     layer = 'data', # using normalized data
     use_metacells=TRUE
   )
@@ -99,12 +100,84 @@ for (i in unique(seurat_obj$Background)){
   mod_pres <- GetModulePreservation(pres_seurat_obj, paste0("WT to ",Backtest))$Z
   obs_df <- GetModulePreservation(pres_seurat_obj, paste0("WT to ",Backtest))$obs
   saveRDS(obs_df,paste0(dataout,"/obs_DF_",Backtest,".rds"))
-  saveRDS(mods_pres,paste0(dataout,"/Z_DF_",Backtest,".rds"))
+  saveRDS(mod_pres,paste0(dataout,"/Z_DF_",Backtest,".rds"))
   
 }
 
+#Plotting all the results in a single plot
+
+wt_seurat_obj<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int_sct/Isolate_WGCNA/Attempt_2/new_URN_int_sctWGCNA_final_WTonly_projected.rds")
+#Pulling al the mp files and summarizing the results in a single graph
+pres_summ<-list()
+cor_summ<-list()
 
 
-#Using the NetRep protocol 
+for (i in unique(wt_seurat_obj$Background)){
+  df<-readRDS(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int_sct/Isolate_WGCNA/Attempt_2/Module_Preservation/Z_DF_",i,".rds"))
+  
+  #figure out what to do with median rank. maybe
+  pres_summ[[i]]<-df$Zsummary.pres
+  cor_summ[[i]]<-df$Z.cor.cor
+}
 
-#
+pres_summ<-as.data.frame(pres_summ)
+rownames(pres_summ)<-rownames(df)
+colnames(pres_summ)<-gsub("X","",colnames(pres_summ))
+
+plot_df <- pres_summ %>%
+  tibble::rownames_to_column("Module") %>%
+  pivot_longer(
+    cols = -Module,
+    names_to = "Background",
+    values_to = "Zsummary"
+  )
+
+
+plot_df$Preservation <- cut(
+  plot_df$Zsummary,
+  breaks = c(-Inf, 2, 10, Inf),
+  labels = c("Not preserved", "Moderately", "Strongly")
+)
+
+
+#change background values to the right thing
+plot_df$Background<-replace_values(plot_df$Background, 
+                                   "C" ~ "WT-PIC",
+                                   "1"~"NS1-PIC",
+                                   "2"~"NS2a-PIC",
+                                   "3"~"NS2b-PIC",
+                                   "4"~"NS3-PIC",
+                                   "7"~"NS4a-PIC",
+                                   "12"~"NS5-PIC",
+                                   "J"~"GFP-PIC",)
+
+
+ggplot(plot_df,
+       aes(x = Module,
+           y = Zsummary,
+           color = Background)) +
+  geom_point(
+    position = position_dodge(width = 0.5),
+    size = 3
+  ) +
+  geom_hline(yintercept = c(2, 10),
+             linetype = "dashed",
+             color = c("orange", "darkgreen")) +
+  theme_cowplot() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.text = element_text(size = 8, color = "black"),
+    legend.title=element_blank(),
+    axis.title.x= element_text(size=11,color="black"),
+    axis.title.y= element_text(size=11,color="black"),
+    plot.title = element_text(size=11,color="black",hjust=0.5,face="plain"),
+    axis.text = element_text(size=10)
+    
+  ) +
+  labs(
+    x = "Module",
+    y = "Zsummary",
+    title="Module preservation from WT to ZIKV NS Backgrounds"
+  )
+
+

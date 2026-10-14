@@ -32,15 +32,73 @@ library(org.Hs.eg.db)
 
 
 #Recreating Figures
-dataout<-"/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int/Paper_Figures"
-
+dataout<-"/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int_sct/Paper_Figures"
+dir_create(dataout)
 base=2
 
+
 #Figure 1 B ####
+Seur_target<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int_sct/Seurat_Analysis/new_URN_int_sct_final.rds")
+Seur_target$Background<-replace_values(Seur_target$Background, 
+                                       "C" ~ "WT",
+                                       "1"~"NS1",
+                                       "2"~"NS2a",
+                                       "3"~"NS2b",
+                                       "4"~"NS3",
+                                       "7"~"NS4a",
+                                       "12"~"NS5",
+                                       "J"~"GFP",)
+
+
+DimPlot(Seur_target, reduction = "umap",group.by="Background",label=FALSE,stroke.size=base/15)+
+  labs(title="")+
+  
+  theme_cowplot( )+
+  guides(color = guide_legend(override.aes = list(size = base/2)))+
+  theme(legend.text = element_text(size = base*2, color = "black"),
+        plot.margin = unit(c(0, 0, 0, 0), "null"),
+        axis.title.x= element_text(size=base*4,color="black"),
+        legend.key.size = unit(0.2,"line"),
+        legend.box.spacing = unit(0, "pt"),
+        axis.line = element_line(colour = 'black', size = base/7),
+        axis.ticks = element_line(size=base/7),
+        axis.title.y= element_text(size=base*4,color="black"),
+        plot.title = element_blank(),
+        axis.text = element_text(size=base*2)
+  )
+ggsave(paste0(dataout,"/fig1B.png"),width=base,height=base,unit="in",dpi=300)
+
+
+#Figure 1 C ####
+Seur_target<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int_sct/Seurat_Analysis/new_URN_int_sct_final.rds")
+
+DimPlot(Seur_target, reduction = "umap",group.by="Treatment",label=FALSE,stroke.size=base/15)+
+  labs(title="")+
+  
+  scale_color_discrete(labels =c("C"= "CTRL", "L"="LPS", "P"="PIC"),palette = c("C"="#619CFF","L"="#00BA38","P"="#F8766D") )+
+  theme_cowplot( )+
+  guides(color = guide_legend(override.aes = list(size = base/2)))+
+  theme(legend.text = element_text(size = base*2, color = "black"),
+        plot.margin = unit(c(0, 0, 0, 0), "null"),
+        axis.title.x= element_text(size=base*4,color="black"),
+        legend.key.size = unit(0.2,"line"),
+        legend.box.spacing = unit(0, "pt"),
+        axis.line = element_line(colour = 'black', size = base/7),
+        axis.ticks = element_line(size=base/7),
+        axis.title.y= element_text(size=base*4,color="black"),
+        plot.title = element_blank(),
+        axis.text = element_text(size=base*2)
+  )
+ggsave(paste0(dataout,"/fig1C.png"),width=base,height=base,unit="in",dpi=300)
+
+
+
+
+#Figure 1 D ####
 
 #volcanoplots for new_URN_int with teh fixed titles and the same list of ISGs, IFIT
 
-vsP_DE<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int/Seurat_Analysis/vsP_DE.rds")
+vsP_DE<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int_sct/Seurat_Analysis/vsP_DE.rds")
 WT<-vsP_DE[["C"]]
 
 #Capping pval adjusted at 10^-302 to allow for better plotting
@@ -50,33 +108,33 @@ WT[WT$p_val_adj==0,"p_val_adj"]<-1*10^-302
 WT_PIC<-grepl("ISG|IFIT|OAS|CCL",WT[WT$expression != "NS", ][order(WT[WT$expression != "NS", ]$p_val_adj), "gene"])
 WT_PIC_GENES<-head(WT[WT_PIC,],10)
 
+WT$isg<-ifelse(grepl("ISG|IFIT|OAS|CCL|IFI",WT$gene), "Yes", "No")
 
+sigWT<-WT[WT$expression != "NS", ]
+highlight_data<-sigWT[grepl("ISG|IFIT|OAS|CCL|IFI",sigWT$gene),]
 
-volcano<-ggplot(WT, aes(x = avg_log2FC, y = -log10(p_val_adj), color = expression)) +
-  geom_point(alpha = 0.8, size = base/4) +
+volcano<-ggplot(WT, aes(x = avg_log2FC, y = -log10(p_val_adj) , color = expression)) +
+  geom_point( size = base/30) +
   scale_color_manual(values = c("Down" = "blue", "NS" = "grey", "Up" = "red"),
                      labels =c("Downregulated", "Not Significant", "Upregulated") ) +
-  
+  # Layer 2: Plot only the selected points (bright and prominent)
+  geom_point(data = highlight_data, 
+             color="orange",
+             size = base/10) +
+
   # Threshold lines
   geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black",linewidth=base/7) +
   geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black",linewidth=base/7) +
   expand_limits(y = -log10(320))+
   
   
-  #Labelling the top 10 genes
-  geom_text_repel(
-    data = WT_PIC_GENES,
-    aes(label = gene),
-    color = "black",
-    size = base*0.8
-  ) +
-  
+
   scale_x_continuous(breaks = seq(-4,8, by = 2), limits=c(-4,8)) +
 
   scale_y_continuous(breaks = seq(0, 320, by = 100), limits=c(0,330)) +
   # Formatting
   labs(
-    title = "WT-PIC against WT-CTRL",
+    title = "WT-CTRL vs WT-PIC",
     x = "Log2 Fold Change",
     y = "-Log10 p-value-adj",
     color = ""
@@ -92,151 +150,36 @@ volcano<-ggplot(WT, aes(x = avg_log2FC, y = -log10(p_val_adj), color = expressio
         axis.text = element_text(size=base*2)
         )
 volcano
-ggsave(paste0(dataout,"/fig1B.png"), width = base, height = base, units="in",dpi = 300)
-
-
-
-#Figure 1 C####
-vsP_DE<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int/Seurat_Analysis/vsP_DE.rds")
-NS<-vsP_DE[["3"]]
-
-NS[NS$p_val_adj==0,"p_val_adj"]<-1*10^-302
-
-
-NS_PIC<-grepl("ISG|IFIT|OAS|CCL",NS[NS$expression != "NS", ][order(NS[NS$expression != "NS", ]$p_val_adj), "gene"])
-NS_PIC_GENES<-head(NS[NS_PIC,],10)
-
-
-
-volcano<-ggplot(NS, aes(x = avg_log2FC, y = -log10(p_val_adj), color = expression)) +
-  geom_point(alpha = 0.8, size = base/4) +
-  scale_color_manual(values = c("Down" = "blue", "NS" = "grey", "Up" = "red"),
-                     labels =c("Downregulated", "Not Significant", "Upregulated") ) +
-  
-  #axes limits
-  scale_x_continuous(breaks = seq(-4,8, by = 2), limits=c(-4,8)) +
-  
-  scale_y_continuous(breaks = seq(0, 320, by = 100), limits=c(0,330)) +
-  
-  
-  # Threshold lines
-  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black",linewidth=base/7) +
-  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black",linewidth=base/7) +
-  expand_limits(y = -log10(320))+
-  
-  
-  #Labelling the top 10 genes
-  geom_text_repel(
-    data = NS_PIC_GENES,
-    aes(label = gene),
-    color = "black",
-    size = base*0.8
-  ) +
-  
-  # Formatting
-  labs(
-    title = "NS2b-PIC against NS2b-CTRL",
-    x = "Log2 Fold Change",
-    y = "-Log10 p-value-adj",
-    color = ""
-  ) +
-  theme_cowplot( )+
-  theme(legend.text = element_text(size = base, color = "black"),
-        legend.position = "none",
-        axis.title.x= element_text(size=base*4,color="black"),
-        axis.line = element_line(colour = 'black', size = base/7),
-        axis.ticks = element_line(size=base/7),
-        axis.title.y= element_text(size=base*4,color="black"),
-        plot.title = element_text(size=base*5,color="black",hjust=1,face="plain"),
-        axis.text = element_text(size=base*2)
-  )
-volcano
-ggsave(paste0(dataout,"/fig1C.png"), width = base, height = base, units="in", dpi = 300)
-
-
-
-
-
-
-#Figure 1 D ####
-Seur_target<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int/Seurat_Analysis/new_URN_int_final.rds")
-
-DimPlot(Seur_target, reduction = "umap",group.by="Treatment",label=FALSE,stroke.size=base/20)+
-  labs(title="")+
-  
-  scale_color_discrete(labels =c("C"= "CTRL", "L"="LPS", "P"="PIC"))+
-  theme_cowplot( )+
-  guides(color = guide_legend(override.aes = list(size = base/2)))+
-  theme(legend.text = element_text(size = base*2, color = "black"),
-        plot.margin = unit(c(0, 0, 0, 0), "null"),
-        axis.title.x= element_text(size=base*4,color="black"),
-        legend.key.size = unit(0.2,"line"),
-        legend.box.spacing = unit(0, "pt"),
-        axis.line = element_line(colour = 'black', size = base/7),
-        axis.ticks = element_line(size=base/7),
-        axis.title.y= element_text(size=base*4,color="black"),
-        plot.title = element_blank(),
-        axis.text = element_text(size=base*2)
-  )
-ggsave(paste0(dataout,"/fig1D.png"),width=base,height=base,unit="in",dpi=300)
-
-
-
-
+ggsave(paste0(dataout,"/fig1D.png"), width = base, height = base, units="in",dpi = 300)
 
 
 
 #Figure 1 E ####
-Seur_target<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int/Seurat_Analysis/new_URN_int_final.rds")
-Seur_target$Background<-replace_values(Seur_target$Background, 
-                                          "C" ~ "WT",
-                                          "1"~"NS1",
-                                          "2"~"NS2a",
-                                          "3"~"NS2b",
-                                          "4"~"NS3",
-                                          "7"~"NS4a",
-                                          "12"~"NS5",
-                                          "J"~"GFP",)
 
-DimPlot(Seur_target, reduction = "umap",group.by="Background",label=FALSE,stroke.size = base/20)+
-  labs(title="")+
-  theme_cowplot( )+
-  guides(color = guide_legend(override.aes = list(size = base/2)))+
-  theme(legend.text = element_text(size = base*2, color = "black"),
-        plot.margin = unit(c(0, 0, 0, 0), "null"),
-        axis.title.x= element_text(size=base*4,color="black"),
-        legend.key.size = unit(0.2,"line"),
-        legend.box.spacing = unit(0, "pt"),
-        axis.line = element_line(colour = 'black', size = base/7),
-        axis.ticks = element_line(size=base/7),
-        axis.title.y= element_text(size=base*4,color="black"),
-        plot.title = element_blank(),
-        axis.text = element_text(size=base*2)
-  )
-ggsave(paste0(dataout,"/fig1E.png"),width=base,height=base,dpi=300)
+#volcanoplots for new_URN_int with teh fixed titles and the same list of ISGs, IFIT
 
-
-
-
-#Figure 1 F ####
-
-vsP_DE<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int/Seurat_Analysis/PIC_ONLY/vsP_DE.rds")
-WT<-vsP_DE[["J"]]
+WT<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int_sct/Seurat_Analysis/vsL_DE.rds")
+WT$gene<-rownames(WT)
 
 #Capping pval adjusted at 10^-302 to allow for better plotting
 WT[WT$p_val_adj==0,"p_val_adj"]<-1*10^-302
 
+#Pulling out the significant genes with teh lowest pvalue, that are known PIC associated genes, ISG IFIT, and oas
+WT_LPS<-grepl("ISG|IFIT|OAS|CCL",WT[WT$expression != "NS", ][order(WT[WT$expression != "NS", ]$p_val_adj), "gene"])
+WT_LPS_GENES<-head(WT[WT_PIC,],10)
 
-volcano<-ggplot(WT, aes(x = avg_log2FC, y = -log10(p_val_adj), color = expression)) +
-  geom_point(alpha = 0.8, size = base/4) +
+
+sigWT<-WT[WT$expression != "NS", ]
+highlight_data<-sigWT[grepl("ISG|IFIT|OAS|CCL|IFI",sigWT$gene),]
+
+volcano<-ggplot(WT, aes(x = avg_log2FC, y = -log10(p_val_adj) , color = expression)) +
+  geom_point( size = base/30) +
   scale_color_manual(values = c("Down" = "blue", "NS" = "grey", "Up" = "red"),
                      labels =c("Downregulated", "Not Significant", "Upregulated") ) +
-  
-  #axes limits
-  scale_x_continuous(breaks = seq(-6,8, by = 2), limits=c(-6,8)) +
-  
-  scale_y_continuous(breaks = seq(0, 320, by = 100), limits=c(0,330)) +
-  
+  # Layer 2: Plot only the selected points (bright and prominent)
+  geom_point(data = highlight_data, 
+             color="orange",
+             size = base/10) +
   
   # Threshold lines
   geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black",linewidth=base/7) +
@@ -245,10 +188,12 @@ volcano<-ggplot(WT, aes(x = avg_log2FC, y = -log10(p_val_adj), color = expressio
   
   
   
+  scale_x_continuous(breaks = seq(-4,8, by = 2), limits=c(-4,8)) +
   
+  scale_y_continuous(breaks = seq(0, 320, by = 100), limits=c(0,330)) +
   # Formatting
   labs(
-    title = "GFP-PIC against WT-PIC",
+    title = "WT-CTRL against WT-LPS",
     x = "Log2 Fold Change",
     y = "-Log10 p-value-adj",
     color = ""
@@ -264,60 +209,26 @@ volcano<-ggplot(WT, aes(x = avg_log2FC, y = -log10(p_val_adj), color = expressio
         axis.text = element_text(size=base*2)
   )
 volcano
-ggsave(paste0(dataout,"/fig1F.png"), width = base, height = base,units = "in", dpi = 300)
+ggsave(paste0(dataout,"/fig1E.png"), width = base, height = base, units="in",dpi = 300)
 
 
 
+#Figure1F
 
-
-
-
-
-
-
-#Figure 1 G ####
-
-vsP_DE<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int/Seurat_Analysis/PIC_ONLY/vsP_DE.rds")
-NS<-vsP_DE[["3"]]
-
-#Capping pval adjusted at 10^-302 to allow for better plotting
-NS[NS$p_val_adj==0,"p_val_adj"]<-1*10^-302
-
-
-NS_PIC<-grepl("ISG|IFIT|OAS|CCL",NS[NS$expression != "NS", ][order(NS[NS$expression != "NS", ]$p_val_adj), "gene"])
-NS_PIC_GENES<-head(NS[NS_PIC,],10)
-
-
-volcano<-ggplot(NS, aes(x = avg_log2FC, y = -log10(p_val_adj), color = expression)) +
-  geom_point(alpha = 0.8, size = base/4) +
-  scale_color_manual(values = c("Down" = "blue", "NS" = "grey", "Up" = "red"),
-                     labels =c("Downregulated", "Not Significant", "Upregulated") ) +
-  
-  #axes limits
-  scale_x_continuous(breaks = seq(-6,8, by = 2), limits=c(-6,8)) +
-  
-  scale_y_continuous(breaks = seq(0, 320, by = 100), limits=c(0,330)) +
-  
-  
-  
-  # Threshold lines
-  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black",linewidth=base/7) +
-  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black",linewidth=base/7) +
-  expand_limits(y = -log10(320))+
-  
-  
-  
-  
-  # Formatting
-  labs(
-    title = "NS2b-PIC against WT-PIC",
-    x = "Log2 Fold Change",
-    y = "-Log10 p-value-adj",
-    color = ""
-  ) +
+#Plotting the cluster I keep getting different cluster each time I try to do this. Might ahve to redo at some point
+cluster_plot<-Seur_target@meta.data %>% group_by(Treatment) %>% dplyr::count(seurat_clusters)
+ggplot(cluster_plot,aes(x=Treatment,y=n,fill=seurat_clusters))+
+  geom_bar(position="stack",stat = "identity")+
   theme_cowplot( )+
-  theme(legend.text = element_text(size = base, color = "black"),
-        legend.position = "none",
+  labs(
+   fill=" Cluster",
+    x = "Treatment",
+    y = "Number of Cells"
+  ) +
+  guides(fill = guide_legend(ncol = 2))+
+  theme(legend.text = element_text(size = base*2, color = "black"),
+        legend.key.size = unit(base/20, "in"),
+        legend.title = element_text(size=base*4,color="black"),
         axis.title.x= element_text(size=base*4,color="black"),
         axis.line = element_line(colour = 'black', size = base/7),
         axis.ticks = element_line(size=base/7),
@@ -325,14 +236,19 @@ volcano<-ggplot(NS, aes(x = avg_log2FC, y = -log10(p_val_adj), color = expressio
         plot.title = element_text(size=base*5,color="black",hjust=1,face="plain"),
         axis.text = element_text(size=base*2)
   )
-volcano
-ggsave(paste0(dataout,"/fig1G.png"), width = base, height = base, units="in", dpi = 300)
+ggsave(paste0(dataout,"/fig1F.png"), width = base, height = base, units="in",dpi = 300)
 
 
 
 
-#Figure 2 A
-#2a is already fine
+
+
+#Figure 2 A####
+wt_seurat_obj<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int_sct/Isolate_WGCNA/Attempt_2/new_URN_int_sctWGCNA_final_WTonly.rds")
+png(paste0(dataout,"/fig2A.png"), width = base*2, height = base, units="in", res = 300)
+PlotDendrogram(wt_seurat_obj, main='WT isolate hdWGCNA Dendrogram',return_plot=TRUE)
+dev.off()
+
 
 
 #Figure 2B ####
@@ -510,7 +426,162 @@ ggsave(paste0(dataout,"/fig2B.png"), width = base*2, height = base, units="in", 
 
 
 
+
+#Figure 2C####
+#GO terms
+
+#######RUNNING GO on the modules and on the genes with kme above 0.5
+library(clusterProfiler)
+library(AnnotationDbi)
+library(org.Hs.eg.db)
+
+#read in teh seurat object
+wt_seurat_obj<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int_sct/Isolate_WGCNA/Attempt_2/new_URN_int_sctWGCNA_final_WTonly.rds")
+
+#get modules from wild type isolate reference seuarat object
+modules<-GetModules(wt_seurat_obj)
+mods <- levels(modules$module); mods <- mods[mods != 'grey']
+
+
+#Compiles entrez ids for the universe of possible gene
+universe.symb <- bitr(
+  modules$gene_name,
+  fromType = "SYMBOL",
+  toType = "ENTREZID",
+  OrgDb = org.Hs.eg.db
+)
+
+#takes any genes still in ENSEMBL format and converts them into entrez ids. HIGH ERROR RATE LOOK INTO IT!
+universe.ensembl <- bitr(
+  modules[grepl("ENSG",modules$gene_name),1],
+  fromType = "ENSEMBL",
+  toType = "ENTREZID",
+  OrgDb = org.Hs.eg.db
+)
+
+
+univ.combined<-append(universe.symb$ENTREZID, universe.ensembl$ENTREZID)
+
+#
+
+
+ontol<-"BP" #This can be changed depending on what ontology database you want to use
+
+
+currcolor<-"turquoise" #sets the name of the module to be put through GO enrichment analysis
+genelist<-modules[modules$color==currcolor,1] #populates genelist with all the genes that make up this module
+
+#Convert all the gene symbols into entrez ids. 
+gene.symb <- bitr(
+  genelist,
+  fromType = "SYMBOL",
+  toType = "ENTREZID",
+  OrgDb = org.Hs.eg.db
+)
+
+#Checks to see if any of the ENSEMBL ids in the module can be converted. If not skip conversion 
+if (length(grep(paste(genelist[grepl("ENSG",genelist)],collapse="|"),keys(org.Hs.eg.db, keytype = "ENSEMBL")))==0
+){
+  gene.combined<-gene.symb$ENTREZID
+  
+}else{
+  gene.ensembl<- bitr(
+    genelist[grepl("ENSG",genelist)],
+    fromType= "ENSEMBL",
+    toType = "ENTREZID",
+    OrgDb = org.Hs.eg.db
+    
+  )
+  
+  gene.combined <-append(gene.symb$ENTREZID,gene.ensembl$ENTREZID) #combine symbol->entrez and ensembl->entrez
+  
+}
+
+
+qcutoff=0.05 #sets the qvalue cutoff to be used in GO enrichment 0.05 is standard
+#GO enrichment 
+ego <- enrichGO(
+  gene = gene.combined,
+  universe = univ.combined,
+  OrgDb = org.Hs.eg.db,
+  keyType = "ENTREZID",
+  ont = ontol, #This can be changed depending on what ontology database you want to use
+  readable = TRUE,
+  qvalueCutoff = qcutoff
+  
+)
+
+#create a dotplot of the 10 most significant enriched terms for that module
+dotplot(ego, showCategory = 10)+
+  labs(title="BP GO Enrichment of Turquoise Module",
+       x="Ratio of GO Genes in Module")+
+  ggtitle(paste0(ontol,"GO enrichment of ", currcolor, " module"))+
+  scale_size(range = c(base/2, base*2))+
+  theme_cowplot()+
+  theme(legend.text = element_text(size = base*2, color = "black"),
+        legend.key.size = unit(base/20, "in"),
+        legend.title = element_text(size=base*4,color="black"),
+        axis.title.x= element_text(size=base*4,color="black"),
+        axis.line = element_line(colour = 'black', size = base/7),
+        axis.ticks = element_line(size=base/7),
+        axis.title.y= element_text(size=base*4,color="black"),
+        plot.title = element_text(size=base*5,color="black",hjust=1,face="plain"),
+        axis.text = element_text(size=base*2)
+  )
+
+ggsave(paste0(dataout,"/fig2C.png"),height=base,width=2*base,units= "in", dpi= 300)
+
+
+
 #Figure 2D ####
+#Venn diagram
+library(AnnotationDbi)
+library(org.Hs.eg.db)
+library(ggvenn)
+wt_seurat_obj<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int_sct/Isolate_WGCNA/Attempt_2/new_URN_int_sctWGCNA_final_WTonly.rds")
+turq_mod<-GetModules(wt_seurat_obj) %>% dplyr::filter(module=="turquoise")
+
+#subsetting the module genes
+turq_genes<-turq_mod[,1]
+
+#retrieving the WT-PIC DE genes
+
+vsP_DE<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int_sct/Seurat_Analysis/vsP_DE.rds")
+WT<-vsP_DE[["C"]]
+
+#Capping pval adjusted at 10^-302 to allow for better plotting
+WT[WT$p_val_adj==0,"p_val_adj"]<-1*10^-302
+
+#subsetting upregulated WT-PIC genes
+DE_genes<-WT[WT$expression=="Up","gene"]
+
+
+#Retreiving GO genes
+genes_df <- select(org.Hs.eg.db, 
+                   keys = "GO:0051607", 
+                   columns = c("SYMBOL"), 
+                   keytype = "GOALL")
+GO_symbols<-unique(genes_df$SYMBOL)
+GO_genes<-GO_symbols[GO_symbols %in% rownames(wt_seurat_obj@assays$SCT$data)]
+
+universe<-unique(rownames(wt_seurat_obj@assays$SCT$data))
+
+venn_lists <- list(
+  "Turquoise Module"=turq_genes,
+  "DE"=DE_genes,
+  "GO"=GO_genes
+)
+
+ggvenn(
+  venn_lists, 
+  fill_color = c("#27dbe2", "#EFC000FF", "#CD534CFF"),
+  stroke_size = 0.5, 
+  set_name_size = 4,
+  show_percentage=FALSE
+)
+
+
+
 #PIC object origin,
 
 #READ IN BOTH MODULE GENE LISTS
@@ -578,6 +649,84 @@ ggsave(paste0(dataout,"/fig2D.png"),height=8,width=6,dpi=300)
 
 
 
+#Figure 2E
+#Module preservation
+
+#Plotting all the results in a single plot
+
+wt_seurat_obj<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int_sct/Isolate_WGCNA/Attempt_2/new_URN_int_sctWGCNA_final_WTonly_projected.rds")
+#Pulling al the mp files and summarizing the results in a single graph
+pres_summ<-list()
+cor_summ<-list()
+
+
+for (i in unique(wt_seurat_obj$Background)){
+  df<-readRDS(paste0("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int_sct/Isolate_WGCNA/Attempt_2/Module_Preservation/Z_DF_",i,".rds"))
+  
+  #figure out what to do with median rank. maybe
+  pres_summ[[i]]<-df$Zsummary.pres
+  cor_summ[[i]]<-df$Z.cor.cor
+}
+
+pres_summ<-as.data.frame(pres_summ)
+rownames(pres_summ)<-rownames(df)
+colnames(pres_summ)<-gsub("X","",colnames(pres_summ))
+
+plot_df <- pres_summ %>%
+  tibble::rownames_to_column("Module") %>%
+  pivot_longer(
+    cols = -Module,
+    names_to = "Background",
+    values_to = "Zsummary"
+  )
+
+
+plot_df$Preservation <- cut(
+  plot_df$Zsummary,
+  breaks = c(-Inf, 2, 10, Inf),
+  labels = c("Not preserved", "Moderately", "Strongly")
+)
+
+
+#change background values to the right thing
+plot_df$Background<-replace_values(plot_df$Background, 
+                                   "C" ~ "WT-PIC",
+                                   "1"~"NS1-PIC",
+                                   "2"~"NS2a-PIC",
+                                   "3"~"NS2b-PIC",
+                                   "4"~"NS3-PIC",
+                                   "7"~"NS4a-PIC",
+                                   "12"~"NS5-PIC",
+                                   "J"~"GFP-PIC",)
+
+
+ggplot(plot_df,
+       aes(x = Module,
+           y = Zsummary,
+           color = Background)) +
+  geom_point(
+    position = position_dodge(width = 0.5),
+    size = 3
+  ) +
+  geom_hline(yintercept = c(2, 10),
+             linetype = "dashed",
+             color = c("orange", "darkgreen")) +
+  theme_cowplot() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.text = element_text(size = 8, color = "black"),
+    legend.title=element_blank(),
+    axis.title.x= element_text(size=11,color="black"),
+    axis.title.y= element_text(size=11,color="black"),
+    plot.title = element_text(size=11,color="black",hjust=0.5,face="plain"),
+    axis.text = element_text(size=10)
+    
+  ) +
+  labs(
+    x = "Module",
+    y = "Zsummary",
+    title="Module preservation from WT to ZIKV NS Backgrounds"
+  )
 
 
 
@@ -880,5 +1029,6 @@ p <- ggraph(graph) +
 
 
 p
+
 
 

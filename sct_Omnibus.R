@@ -1694,6 +1694,8 @@ for ( i in setdiff(levels(factor(all_pic_mods$module)),"grey")){
   
   mech_tfs<-mechanistic(mod_list,expressed_genes,organism="human",gene_id="symbol")
   
+  saveRDS(mech_tfs,paste0(dataout,"Individual_Module_tfs/Mech_",i,".rds"))
+  
   
   #change qvalue depending on teh lowest Q value found in the mech tf list
   q_value=0.005
@@ -1711,6 +1713,7 @@ for ( i in setdiff(levels(factor(all_pic_mods$module)),"grey")){
   
   
   all_assoc<-rbind(all_assoc,assoc_tfs)
+  
   
   
 }
@@ -2227,4 +2230,37 @@ red_sig<-picmods[picmods$module=="red" & picmods$expression!="NS",]
 red_mods<-picmods[picmods$module=="red",]
 tops<-head(red_mods %>% arrange(desc(kME_red)),n=25)$gene 
 sum(tops %in% red_sig$gene_name)
+
+
+
+########TF red analysis
+mech_red<-readRDS(paste0(dataout,"Individual_Module_tfs/Mech_red.rds"))
+asstf_red<-readRDS(paste0(dataout,"Individual_Module_tfs/red.rds"))
+
+#get all tfs that target PSME1 and PSME2
+
+sem1<-mech_red[grepl("PSME1",mech_red$Overlapping),]
+sem2<-sem1[grepl("PSME2",sem1$Overlapping),]
+
+#FInd which of the TFs have the most genes that have been downregulated in ZSC3P
+P3_DE<-readRDS("/data/scRNA/HMC3_ZSC/Seurat_OUT/new_URN_int_sct/All_PIC_WGCNA/Attempt_3/vsP_DE.rds")
+P3_DE<-dplyr::filter(P3_DE[["3"]],expression=="Down")
+
+P3_DE$gene 
+tf_target_list<-str_split(sem2[,8]," ")
+names(tf_target_list)<-sem2$TF_symbol
+DE_overlap<-list()
+for (i in 1:length(tf_target_list)){
+  DE_overlap[i]<-length(intersect(P3_DE$gene,tf_target_list[[i]]))
+}
+
+sem2$DE_hits<-unlist(DE_overlap)
+sem2$DE_overlap<-sem2$DE_hits/sem2$Overlap
+
+mech_tfs<-mechanistic(P3_DE$gene,expressed_genes,organism="human",gene_id="symbol")
+psme_tf<-mech_tfs[grepl("PSME1",mech_red$Overlapping),]
+psme_tf<-psme_tf[grepl("PSME2",sem1$Overlapping),]
+
+intersect(psme_tf$TF_symbol,sem2$TF_symbol)
+
 
